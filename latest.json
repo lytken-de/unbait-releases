@@ -1,5 +1,5 @@
 {
-  "version": "1.92",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.92-chrome.zip",
-  "notes": "Sikkerhedskopi af indstillingerne, besked om nye versioner, Ekstra Bladet + skjuler også Plus-salgsbannere, og egne ord rammer igen overskrifter på Se og Hør og Ekstra Bladet."
+  "version": "1.93",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.93-chrome.zip",
+  "notes": "Statusboksen viser nu hele fejlbeskeden (fx når Kilo-grænsen er nået), nye brugere får den nyeste standardprompt, og beskrivelsen på chrome://extensions er opdateret."
 }
