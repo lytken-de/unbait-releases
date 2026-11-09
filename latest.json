@@ -1,5 +1,5 @@
 {
-  "version": "1.91",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.91-chrome.zip",
-  "notes": "Menu på AI-ikonet (Prøv igen / Behold originalen), pause pr. medie i Chromes højrekliksmenu, »Få forslag til prompten« og søgning i loggen."
+  "version": "1.92",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.92-chrome.zip",
+  "notes": "Sikkerhedskopi af indstillingerne, besked om nye versioner, Ekstra Bladet + skjuler også Plus-salgsbannere, og egne ord rammer igen overskrifter på Se og Hør og Ekstra Bladet."
 }
