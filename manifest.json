@@ -1,0 +1,140 @@
+{
+  "manifest_version": 3,
+  "name": "unbAIt DK",
+  "version": "1.0.93",
+  "description": "Erstatter clickbait-overskrifter på danske nyhedssider med neutrale overskrifter skrevet af AI. Du vælger selv AI-udbyderen.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "offscreen",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "*://*.bt.dk/*",
+    "*://*.ekstrabladet.dk/*",
+    "*://*.eb.dk/*",
+    "*://*.tv2.dk/*",
+    "*://*.euroinvestor.dk/*",
+    "*://*.woman.dk/*",
+    "*://*.berlingske.dk/*",
+    "*://*.weekendavisen.dk/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.deepseek.com/*",
+    "https://ai-gateway.kilo.ai/*",
+    "https://api.groq.com/*",
+    "https://api.nova.amazon.com/*",
+    "https://openrouter.ai/*"
+  ],
+  "optional_host_permissions": [
+    "*://*.seoghoer.dk/*",
+    "*://*.billedbladet.dk/*",
+    "*://*.dr.dk/*",
+    "*://*.avisen.dk/*",
+    "*://*.nyheder24.dk/*",
+    "*://*.y.dk/*",
+    "*://*.politiken.dk/*",
+    "*://*.jyllands-posten.dk/*",
+    "*://*.dagbladet-holstebro-struer.dk/*",
+    "*://*.dbrs.dk/*",
+    "*://*.folkebladetlemvig.dk/*",
+    "*://*.frdb.dk/*",
+    "*://*.fyens.dk/*",
+    "*://*.faa.dk/*",
+    "*://*.helsingordagblad.dk/*",
+    "*://*.hsfo.dk/*",
+    "*://*.jv.dk/*",
+    "*://*.amtsavisen.dk/*",
+    "*://*.vafo.dk/*",
+    "*://*.viborg-folkeblad.dk/*",
+    "*://*.stiften.dk/*",
+    "*://*.avisendanmark.dk/*",
+    "*://*.kobenhavnliv.dk/*",
+    "*://*.amagerliv.dk/*",
+    "*://*.frederiksbergliv.dk/*",
+    "*://*.skanderborgliv.dk/*",
+    "*://*.risskovliv.dk/*",
+    "*://*.lystrupliv.dk/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.bt.dk/*",
+        "*://*.ekstrabladet.dk/*",
+        "*://*.eb.dk/*",
+        "*://*.tv2.dk/*"
+      ],
+      "js": [
+        "sites.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/off-16.png",
+      "32": "icons/off-32.png",
+      "48": "icons/off-48.png",
+      "128": "icons/off-128.png"
+    },
+    "default_title": "unbAIt DK – klik for at tænde/slukke"
+  },
+  "icons": {
+    "16": "icons/on-16.png",
+    "32": "icons/on-48.png",
+    "48": "icons/on-48.png",
+    "128": "icons/on-128.png"
+  },
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/on-48.png",
+        "icons/off-48.png"
+      ],
+      "matches": [
+        "*://*.bt.dk/*",
+        "*://*.ekstrabladet.dk/*",
+        "*://*.eb.dk/*",
+        "*://*.tv2.dk/*",
+        "*://*.seoghoer.dk/*",
+        "*://*.billedbladet.dk/*",
+        "*://*.dr.dk/*",
+        "*://*.avisen.dk/*",
+        "*://*.nyheder24.dk/*",
+        "*://*.y.dk/*",
+        "*://*.politiken.dk/*",
+        "*://*.jyllands-posten.dk/*",
+        "*://*.berlingske.dk/*",
+        "*://*.dagbladet-holstebro-struer.dk/*",
+        "*://*.dbrs.dk/*",
+        "*://*.folkebladetlemvig.dk/*",
+        "*://*.frdb.dk/*",
+        "*://*.fyens.dk/*",
+        "*://*.faa.dk/*",
+        "*://*.helsingordagblad.dk/*",
+        "*://*.hsfo.dk/*",
+        "*://*.jv.dk/*",
+        "*://*.amtsavisen.dk/*",
+        "*://*.vafo.dk/*",
+        "*://*.viborg-folkeblad.dk/*",
+        "*://*.stiften.dk/*",
+        "*://*.avisendanmark.dk/*",
+        "*://*.kobenhavnliv.dk/*",
+        "*://*.amagerliv.dk/*",
+        "*://*.frederiksbergliv.dk/*",
+        "*://*.skanderborgliv.dk/*",
+        "*://*.risskovliv.dk/*",
+        "*://*.lystrupliv.dk/*"
+      ]
+    }
+  ],
+  "author": "Thomas Lytken",
+  "version_name": "1.93"
+}

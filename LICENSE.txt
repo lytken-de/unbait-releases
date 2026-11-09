@@ -1,0 +1,175 @@
+﻿unbAIt DK License
+Version 1.0
+
+Copyright (c) 2026 Thomas Lytken
+
+This license is provided in English and Danish. In case of any discrepancy
+between the two versions, the English version prevails.
+
+======================================================================
+ENGLISH
+======================================================================
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish and distribute the Software, subject to the
+following conditions:
+
+1. Preservation of notices
+This entire license, including the copyright notice, conditions and
+disclaimer, must be included in all copies or substantial portions of the
+Software.
+
+2. Free use and distribution
+The Software may be used free of charge for personal, educational,
+professional and internal business purposes.
+Unmodified and modified versions may be distributed free of charge, subject
+to the other conditions of this license.
+
+3. Sale and paid distribution
+Permission to sell copies, charge a license or access fee, or offer the
+Software as part of a paid product or service is granted only if the version
+supplied is a Substantially Modified Version, as defined below, or the
+copyright holder has given prior written permission.
+These restrictions also apply where payment for the Software is required
+indirectly through a mandatory subscription, membership, bundle or other
+purchase, or where the Software is distributed free of charge but monetised
+through advertising, sponsorship or the collection or sale of user data that
+is displayed, collected or performed by the Software itself. Advertising or
+sponsorship on a website or other channel from which the Software can be
+downloaded is not covered by this restriction, provided that the Software
+itself is not modified for that purpose.
+Payment by a user to an independent AI provider for that user's own API usage
+does not, by itself, constitute a sale or paid offering of the Software.
+
+4. Substantially Modified Versions
+A "Substantially Modified Version" is a version whose functional changes,
+assessed together against the version of the Software released by Thomas
+Lytken from which it is derived, materially alter or extend its capabilities
+or operation.
+Such changes may consist of substantial additions, substantial improvements,
+or substantial removals or replacements of functionality. They must represent
+a meaningful functional development of the Software.
+Renaming the Software, changing its logo, colours, icons or interface
+wording, changing formatting, reorganising code without materially changing
+behaviour, or making other cosmetic changes is not sufficient.
+Minor feature additions or removals, routine maintenance, dependency updates
+and ordinary bug fixes do not, by themselves, qualify. The number of changed
+lines of code is not, by itself, evidence of substantial modification.
+Changes to prompts or processing logic may qualify only if their functional
+effect meets the requirements above.
+
+5. Distribution of modified versions
+Modified versions must be clearly identified as modified and must not be
+presented as an official release by Thomas Lytken.
+A modified version distributed free of charge may keep the name "unbAIt DK"
+only together with a clear indication that it is modified, such as
+"unbAIt DK (modified)".
+A version sold or offered for a fee under Section 3 must use its own name and
+must not use the name "unbAIt DK", or a confusingly similar name, as its own
+name, but may state that it is based on unbAIt DK.
+A Substantially Modified Version may be sold or offered for a fee under
+Section 3. This permission does not remove the obligation to preserve this
+license and does not permit these conditions to be removed from the original
+Software or substantial portions of it.
+Separate terms may be applied to independently authored additions, provided
+that those terms do not override this license as it applies to the original
+Software.
+
+6. Separate permission
+The copyright holder may grant separate written permission for uses
+otherwise restricted by this license.
+
+DISCLAIMER
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. TO THE MAXIMUM EXTENT
+PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+======================================================================
+DANSK
+======================================================================
+
+Enhver, der får en kopi af denne software og tilhørende dokumentation
+("Softwaren"), får hermed gratis tilladelse til at bruge, kopiere, ændre,
+sammenføje, offentliggøre og distribuere Softwaren på følgende betingelser:
+
+1. Bevarelse af meddelelser
+Hele denne licens, herunder ophavsretsmeddelelsen, betingelserne og
+ansvarsfraskrivelsen, skal følge med alle kopier af Softwaren eller
+væsentlige dele af den.
+
+2. Gratis brug og distribution
+Softwaren må bruges gratis til personlige, uddannelsesmæssige, faglige og
+interne forretningsmæssige formål.
+Uændrede og ændrede versioner må distribueres gratis, så længe licensens
+øvrige betingelser overholdes.
+
+3. Salg og betalt distribution
+Det er kun tilladt at sælge kopier, opkræve licens- eller adgangsgebyr eller
+tilbyde Softwaren som del af et betalt produkt eller en betalt tjeneste, hvis
+den leverede version er en Væsentligt Ændret Version som defineret nedenfor,
+eller hvis ophavsretshaveren på forhånd har givet skriftlig tilladelse.
+Disse begrænsninger gælder også, når betaling for Softwaren kræves indirekte
+gennem et obligatorisk abonnement, medlemskab, en pakke eller et andet køb,
+eller når Softwaren distribueres gratis, men indtjenes gennem reklamer,
+sponsorater eller indsamling eller salg af brugerdata, som Softwaren selv
+viser, indsamler eller udfører. Reklamer eller sponsorater på en hjemmeside
+eller en anden kanal, hvorfra Softwaren kan hentes, er ikke omfattet af denne
+begrænsning, så længe Softwaren ikke selv er ændret til det formål.
+En brugers betaling til en uafhængig AI-udbyder for brugerens eget
+API-forbrug er ikke i sig selv et salg eller et betalt tilbud af Softwaren.
+
+4. Væsentligt Ændrede Versioner
+En "Væsentligt Ændret Version" er en version, hvis funktionelle ændringer,
+samlet vurderet i forhold til den version af Softwaren, som Thomas Lytken
+har udgivet, og som den bygger på, væsentligt ændrer eller udvider Softwarens
+muligheder eller virkemåde.
+Sådanne ændringer kan bestå af væsentlige tilføjelser, væsentlige
+forbedringer eller væsentlige fjernelser eller udskiftninger af funktioner.
+De skal udgøre en betydelig funktionel videreudvikling af Softwaren.
+Det er ikke nok at omdøbe Softwaren, ændre dens logo, farver, ikoner eller
+tekster i brugerfladen, ændre formateringen, omorganisere koden uden at ændre
+dens virkemåde væsentligt eller foretage andre kosmetiske ændringer.
+Mindre tilføjelser eller fjernelser af funktioner, almindelig vedligeholdelse,
+opdatering af afhængigheder og almindelige fejlrettelser kvalificerer ikke i
+sig selv. Antallet af ændrede kodelinjer er ikke i sig selv bevis for en
+væsentlig ændring.
+Ændringer af prompter eller behandlingslogik kan kun kvalificere, hvis deres
+funktionelle virkning opfylder kravene ovenfor.
+
+5. Distribution af ændrede versioner
+Ændrede versioner skal tydeligt være mærket som ændrede og må ikke fremstilles
+som en officiel udgivelse fra Thomas Lytken.
+En ændret version, der distribueres gratis, må kun beholde navnet "unbAIt DK"
+sammen med en tydelig angivelse af, at den er ændret, fx
+"unbAIt DK (modified)".
+En version, der sælges eller tilbydes mod betaling efter punkt 3, skal have
+sit eget navn og må ikke bruge navnet "unbAIt DK" eller et navn, der kan
+forveksles med det, som sit eget navn, men må gerne angive, at den bygger på
+unbAIt DK.
+En Væsentligt Ændret Version må sælges eller tilbydes mod betaling efter
+punkt 3. Denne tilladelse fjerner ikke pligten til at bevare denne licens og
+giver ikke lov til at fjerne disse betingelser fra den oprindelige Software
+eller væsentlige dele af den.
+Selvstændigt udviklede tilføjelser kan have egne vilkår, så længe disse
+vilkår ikke tilsidesætter denne licens for så vidt angår den oprindelige
+Software.
+
+6. Særskilt tilladelse
+Ophavsretshaveren kan give særskilt skriftlig tilladelse til brug, som ellers
+er begrænset af denne licens.
+
+ANSVARSFRASKRIVELSE
+SOFTWAREN LEVERES "SOM DEN ER", UDEN NOGEN FORM FOR GARANTI, HVERKEN
+UDTRYKKELIG ELLER STILTIENDE, HERUNDER MEN IKKE BEGRÆNSET TIL GARANTIER FOR
+SALGBARHED, EGNETHED TIL ET BESTEMT FORMÅL OG IKKE-KRÆNKELSE AF RETTIGHEDER. I
+DET OMFANG GÆLDENDE LOV TILLADER DET, ER FORFATTERNE ELLER
+OPHAVSRETSHAVERNE UNDER INGEN OMSTÆNDIGHEDER ANSVARLIGE FOR NOGET KRAV, NOGEN
+SKADE ELLER NOGET ANDET ANSVAR, HVAD ENTEN DET OPSTÅR I KONTRAKT, ERSTATNING
+UDEN FOR KONTRAKT ELLER PÅ ANDEN MÅDE, SOM FØLGE AF ELLER I FORBINDELSE MED
+SOFTWAREN ELLER BRUGEN AF ELLER ANDEN HANDEL MED SOFTWAREN.
+
