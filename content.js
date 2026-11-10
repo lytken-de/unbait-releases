@@ -66,13 +66,13 @@
   // v1.93: detail = fejlteksten på sin egen linje under tælleren (højst 120 tegn), så fx hele Kilo-beskeden kan ses
   function showStatus(msg, isError = false, detail = "") { selfWrite(() => showStatusInner(msg, isError, detail)); }
   let aiName = "";   // vises diskret i statusboksen
-  let lastStatus = null, lastDetail = "";
+  let lastStatus = null, lastDetail = "", lastMsg = "", lastIsError = false;   // det, statusboksen viser nu
   const STATUS_DETAIL_MAX = 120;
   function showStatusInner(msg, isError, detail = "") {
     const text = "unbAIt DK: " + msg;
     detail = String(detail || "").replace(/\s+/g, " ").trim();
     if (detail.length > STATUS_DETAIL_MAX) detail = detail.slice(0, STATUS_DETAIL_MAX - 1).trimEnd() + "…";
-    lastDetail = detail;
+    lastDetail = detail; lastMsg = msg; lastIsError = !!isError;
     const key = text + "|" + detail + "|" + aiName + "|" + isError;
     if (statusEl?.isConnected && lastStatus === key) return; // ingen unødige ændringer (fund S04)
     lastStatus = key;
@@ -174,18 +174,12 @@
   function findArticleUrl(el) {
     // v1.89: Y.dk – linket ligger enten om overskriften eller som et lag over hele kortet (<article> > a).
     // Artikelsidens egen overskrift står i en <article> med links i brødteksten; den har intet lag og sendes ikke.
-    if (Y) {
-      const a = el.closest("a[href]") || el.closest("article")?.querySelector(":scope > a[href]");
-      if (!a) return "";
-      try { const u = new URL(a.getAttribute("href"), location.href); return /^https?:$/.test(u.protocol) ? u.href : ""; } catch { return ""; }
-    }
-    const a = el.closest("a[href]") || el.querySelector("a[href]") ||
-      el.closest("article, [class*='teaser'], [class*='Teaser'], [class*='dre-item']")?.querySelector("a[href]");
+    const a = Y ? el.closest("a[href]") || el.closest("article")?.querySelector(":scope > a[href]")
+      : el.closest("a[href]") || el.querySelector("a[href]") ||
+        el.closest("article, [class*='teaser'], [class*='Teaser'], [class*='dre-item']")?.querySelector("a[href]");
     if (!a) return "";
-    try {
-      const u = new URL(a.getAttribute("href"), location.href);
-      return /^https?:$/.test(u.protocol) ? u.href : "";
-    } catch { return ""; }
+    // Kun http- og https-links (ikke fx javascript: eller mailto:)
+    try { const u = new URL(a.getAttribute("href"), location.href); return /^https?:$/.test(u.protocol) ? u.href : ""; } catch { return ""; }
   }
 
   // ---------------------------------------------------------------------
@@ -247,13 +241,11 @@
   const BT_PODCAST = "a[class*='PodcastEpisodeTeaser_link']";
   const BT_PODCAST_ITEM = "li[class*='Slider_listItem']", BT_PODCAST_ROW = "div[class*='Slider_container']";
   // BT's korte videoer (bt.dk/video/reels/<kode>) har hverken uddrag eller ord i adressen og sendes ikke til AI'en (v1.30)
-  function isBtReel(url) {
-    try { const u = new URL(url); return H_BT.test(u.hostname) && /^\/video\/reels\//.test(u.pathname); } catch { return false; }
-  }
+  // v1.94: passer adressens domæne og sti? (ugyldig adresse = nej)
+  const urlIs = (url, hostRe, pathRe) => { try { const u = new URL(url); return hostRe.test(u.hostname) && pathRe.test(u.pathname); } catch { return false; } };
+  const isBtReel = (url) => urlIs(url, H_BT, /^\/video\/reels\//);
   // BT's spil (bt.dk/spil/, fx "Gæt dagens ord" og "Det lille krydsord") sendes heller ikke til AI'en (v1.31)
-  function isBtGame(url) {
-    try { const u = new URL(url); return H_BT.test(u.hostname) && /^\/spil(\/|$)/.test(u.pathname); } catch { return false; }
-  }
+  const isBtGame = (url) => urlIs(url, H_BT, /^\/spil(\/|$)/);
   // De nye sider (v1.37): korte videoer (…/reels/…), links til andre sider og sider, der ikke er
   // artikler (nyhedsbrev, spil, abonnement …), sendes ikke til AI'en
   function isNewSiteSkip(url) {
@@ -268,9 +260,7 @@
     } catch { return false; }
   }
   // v1.79: TV 2's korte videoer (fx tv2.dk/penge/reel/…) har hverken uddrag eller brugbar tekst og sendes ikke til AI'en
-  function isTv2Reel(url) {
-    try { const u = new URL(url); return /(^|\.)tv2\.dk$/.test(u.hostname) && /(^|\/)reels?\//.test(u.pathname); } catch { return false; }
-  }
+  const isTv2Reel = (url) => urlIs(url, /(^|\.)tv2\.dk$/, /(^|\/)reels?\//);
   const noAI = (url) => isBtReel(url) || isBtGame(url) || isTv2Reel(url) || isNewSiteSkip(url);
   // Avisen.dk's annoncer (kort med klassen Category-advertorial, "Annonce …") sendes heller ikke til AI'en (v1.37)
   // Fra v1.41 heller ikke boksen "Forbrugerguides" (Category-forbrugerguides), der også er annoncer
@@ -300,7 +290,7 @@
   }
   async function loadHideCfg() {
     try {
-      const s = await chrome.storage.sync.get({ hideCats: [], hidePlus: false, hideAds: false, hideAdsAvisen: false, hideGames: false, hideWords: "", hideMode: "remove" });
+      const s = await chrome.storage.sync.get(HIDE_DEFAULTS);   // standardværdierne står i shared.js (v1.94)
       hideCfg = { cats: Array.isArray(s.hideCats) ? s.hideCats : [], plus: !!s.hidePlus, ads: !!s.hideAds, adsAvisen: !!s.hideAdsAvisen, games: !!s.hideGames,
         words: parseWords(s.hideWords), mode: s.hideMode === "dim" ? "dim" : "remove" };
     } catch {}
@@ -331,9 +321,7 @@
     // Annoncer: EB's kommercielle sider (fx karrusellen "Populært på Ekstra Bladet Pristjek") (v1.21)
     // Spil: B.T.'s spil (bt.dk/spil/) (v1.31)
     if (hideCfg.games && SITE === "bt" && url && isBtGame(url)) return "Spil";
-    if (hideCfg.ads && SITE === "eb" && url) {
-      try { const u = new URL(url); if (H_EB.test(u.hostname) && /^\/kommerciel\//.test(u.pathname)) return "Annonce"; } catch {}
-    }
+    if (hideCfg.ads && SITE === "eb" && url && urlIs(url, H_EB, /^\/kommerciel\//)) return "Annonce";
     // Annoncer på Avisen.dk: advertorials og hele boksen "Forbrugerguides" (v1.41)
     if (hideCfg.adsAvisen && SITE === "avisen" && root.closest?.(AVISEN_ADS)) return "Annonce";
     if (SITE === "avisen" && hideCfg.cats.length) {
@@ -691,9 +679,6 @@
     return "";
   }
 
-  // Uddrag under så mange tegn regnes som korte: så sendes adressens tekst også med (v1.30)
-  const SHORT_EXCERPT = 400;
-
   const BODY_SELECTORS = {
     eb: ["[itemprop='articleBody']", ".article-bodytext", "[class*='article-body']", "[class*='bodytext']"],
     // De nye sider (v1.37) bruger GENERIC_BODY nedenfor
@@ -884,11 +869,11 @@
   }
 
   // v1.68: TV 2's liveblogs uden ?entry= (fx forsidens kort, der linker til hele »Kort nyt«): indlægget findes ud fra
-  // overskriften. Store og små bogstaver, mellemrum og anførselstegn tæller ikke. Findes intet indlæg, bruges intet
+  // overskriften. Store og små bogstaver, mellemrum, anførselstegn og afsluttende tegn tæller ikke. Findes intet indlæg, bruges intet
   // uddrag – liveblog'ens generelle beskrivelse (»TV 2 serverer et kort og præcist overblik …«) bruges ikke.
-  const headKey = (t) => String(t || "").toLowerCase().replace(/["'“”„»«‘’`]/g, "").replace(/\s+/g, " ").trim();
+  // Sammenligningen (headlineKey) står i shared.js (v1.94)
   function tv2LivePost(html, articleUrl, headline) {
-    const want = headKey(headline);
+    const want = headlineKey(headline);
     if (!want) return "";
     const doc = new DOMParser().parseFromString(html, "text/html");
     // Siden skal være den liveblog, kortet linker til
@@ -896,7 +881,7 @@
     if (!canonical || !samePage(canonical, articleUrl)) return "";
     for (const post of doc.querySelectorAll("article.tc_post")) {
       const title = post.querySelector(".tc_post__body__title");
-      if (!title || headKey(title.textContent) !== want) continue;
+      if (!title || headlineKey(title.textContent) !== want) continue;
       const body = post.querySelector(".tc_post__body__post .tc_richcontent");
       if (!body) return "";
       const ps = [...body.querySelectorAll("p")].map(p => p.textContent.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -909,10 +894,22 @@
     for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
       try { const j = JSON.parse(s.textContent); for (const x of [].concat(j)) if (x && x.headline) titles.push(String(x.headline)); } catch {}
     }
-    const same = titles.some(t => headKey(t) === want || headKey(t.replace(/\s*[|–-]\s*TV ?2.*$/i, "")) === want);
+    const same = titles.some(t => headlineKey(t) === want || headlineKey(t.replace(/\s*[|–-]\s*TV ?2.*$/i, "")) === want);
     if (!same) return "";
     const desc = doc.querySelector("meta[property='og:description']")?.content || doc.querySelector("meta[name='description']")?.content || "";
     return desc.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500);
+  }
+
+  // v1.94: artikel på samme domæne som siden hentes direkte (højst 6 sekunder, højst 800.000 tegn);
+  // finalUrl = adressen efter en omdirigering. Fejler hentningen, kastes fejlen videre til getContext
+  async function fetchSameOrigin(url) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const r = await fetch(url, { credentials: "include", signal: ctrl.signal });
+      if (!r.ok) return { html: "", finalUrl: "" };
+      return { html: (await r.text()).slice(0, 800000), finalUrl: r.redirected ? r.url : "" };
+    } finally { clearTimeout(t); }
   }
 
   async function getContext(url, headline = "") {
@@ -923,13 +920,7 @@
     if (lcPost) {
       try {
         if (new URL(url, location.href).origin !== location.origin) return "";
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 6000);
-        let html = "";
-        try {
-          const r = await fetch(url, { credentials: "include", signal: ctrl.signal });
-          if (r.ok) html = (await r.text()).slice(0, 800000);
-        } finally { clearTimeout(t); }
+        const { html } = await fetchSameOrigin(url);
         return await liveCenterContext(html, lcPost);   // ingen generisk liveblog-tekst som før
       } catch { return ""; }
     }
@@ -942,12 +933,7 @@
     try {
       let html = "", finalUrl = "";
       if (new URL(url).origin === location.origin) {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 6000);
-        try {
-          const r = await fetch(url, { credentials: "include", signal: ctrl.signal });
-          if (r.ok) { html = (await r.text()).slice(0, 800000); if (r.redirected) finalUrl = r.url; }
-        } finally { clearTimeout(t); }
+        ({ html, finalUrl } = await fetchSameOrigin(url));
       } else {
         const r = await withTimeout(chrome.runtime.sendMessage({ action: "fetchArticle", url }), 7000, null);
         html = r?.html || ""; finalUrl = r?.finalUrl || "";
@@ -1063,14 +1049,19 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     const c = cards.get(el);
     return c ? [...tracked].filter(x => { const o = cards.get(x); return o && x.isConnected && o.url === c.url && o.origText === c.origText; }) : [];
   }
+  // v1.94: omskrivningen fjernes – originalen sættes tilbage (hvis den vises), AI-ikonet fjernes, og var kortet
+  // omskrevet, tælles »Omskrevet« ned. Bruges af »Behold originalen« og når genkontrollen ikke gav en omskrivning
+  function dropRewrite(el, c) {
+    selfWrite(() => { if (c.showing === "ai" && c.nodes) el.replaceChildren(...c.nodes); el.querySelector(".unbait-toggle")?.remove(); });
+    inserted.delete(el);
+    if (c.rewritten) processedCount = Math.max(0, processedCount - 1);
+    c.rewritten = null; c.showing = "original"; c.span = null; c.anchor = null;
+  }
   function markKept(el) {
     const c = cards.get(el);
     if (!c) return;
-    const had = !!c.rewritten;
-    selfWrite(() => { if (c.showing === "ai" && c.nodes) el.replaceChildren(...c.nodes); el.querySelector(".unbait-toggle")?.remove(); });
-    inserted.delete(el);
-    c.kept = true; c.rewritten = null; c.showing = "original"; c.span = null; c.anchor = null; c.jobId = null;
-    if (had) processedCount = Math.max(0, processedCount - 1);
+    dropRewrite(el, c);
+    c.kept = true; c.jobId = null;
     selfWrite(() => { el.dataset.unbait = "kept"; });
     createToggle(el);
   }
@@ -1097,10 +1088,8 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     showStatus(action === "again" ? "Omskriver igen…" : "Prøver igen…");
     let res;
     try {
-      const context = await withTimeout(getContext(c.url, c.origText), 8000, "");
-      if (context) excerptText.set(el, context.toLowerCase());
-      res = await withTimeout(chrome.runtime.sendMessage({ action: "rewrite", force: true, text: c.origText, article: c.url, context, label: c.label,
-        urlText: context.length >= SHORT_EXCERPT ? "" : urlText(c.url), jobId: crypto.randomUUID() }), 90000, { timeout: true });
+      const context = await fetchContext(el, c);
+      res = await requestRewrite(c, context, crypto.randomUUID(), true);
     } catch (e) { res = { error: e.message || String(e) }; }
     flushPending();
     if (!enabled) return;
@@ -1116,6 +1105,20 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     updateStatus();
     showStatus((action === "again" ? "Omskriv alligevel" : "Prøv igen") + " gav ingen ny omskrivning" +
       (res?.error ? " (" + String(res.error).slice(0, 60) + ")" : res?.timeout ? " (AI svarede ikke i tide)" : ""), !!res?.error);
+  }
+
+  // v1.94: fælles for den almindelige omskrivning og »Prøv igen«/»Omskriv alligevel«
+  // Artiklens uddrag (højst 8 sekunder); huskes til »Skjul indhold« (egne ord tjekkes også i uddraget, v1.77) – men kun,
+  // hvis opgaven stadig gælder (valid): et uddrag fra den forrige artikel må ikke skjule den nye (v1.90, audit A-02)
+  async function fetchContext(el, c, valid = () => true) {
+    const context = await withTimeout(getContext(c.url, c.origText), 8000, "");
+    if (context && valid()) excerptText.set(el, context.toLowerCase());
+    return context;
+  }
+  // Beder baggrunden om en omskrivning (højst 90 sekunder). Baggrunden afgør, om adressens tekst bruges
+  function requestRewrite(c, context, jobId, force = false) {
+    return withTimeout(chrome.runtime.sendMessage({ action: "rewrite", ...(force ? { force: true } : {}), text: c.origText, article: c.url, context,
+      label: c.label, urlText: urlText(c.url), jobId }), 90000, { timeout: true });
   }
 
   function applyResult(job, res) {
@@ -1135,26 +1138,14 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     if (res.skip) {
       // v1.90 (audit A-01): en gammel omskrivning (fra cachen) blev vist, men genkontrollen af artiklen gav ingen
       // godkendt omskrivning: originalen sættes tilbage, og AI-ikonet fjernes – også hvis brugeren viste originalen
-      if (c.rewritten) {
-        selfWrite(() => {
-          if (c.showing === "ai" && c.nodes) el.replaceChildren(...c.nodes);
-          el.querySelector(".unbait-toggle")?.remove();
-        });
-        inserted.delete(el);
-        c.rewritten = null; c.showing = "original"; c.span = null; c.anchor = null;
-        processedCount = Math.max(0, processedCount - 1);
-      }
+      if (c.rewritten) dropRewrite(el, c);
       el.dataset.unbait = "skipped";
       return;
     }
-    if (c.showing === "ai" && c.rewritten === res.rewritten) return; // uændret efter tjek
-    const wasShowing = c.showing === "ai";
-    c.rewritten = res.rewritten;
-    c.showing = "ai";
-    el.dataset.unbait = "done";
-    applyRewrite(el, res.rewritten);
-    createToggle(el);
-    if (!wasShowing) processedCount++;
+    // Uændret efter tjek: intet ændres – heller ikke, hvis brugeren har klikket originalen frem (v1.94; før blev
+    // omskrivningen vist igen og talt med to gange i »Omskrevet«)
+    if (c.rewritten === res.rewritten) return;
+    showRewrite(el, res.rewritten);
   }
 
   async function runJob(job) {
@@ -1163,19 +1154,15 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     const jobId = crypto.randomUUID(); // unikt på tværs af faner (R03)
     c.jobId = jobId;
     try {
-      const context = await withTimeout(getContext(c.url, c.origText), 8000, "");
+      const context = await fetchContext(el, c, () => alive(job));
       if (!alive(job)) return;
       // v1.77: står et af brugerens ord i uddraget, skjules kortet nu, og intet sendes til AI'en
-      if (context) excerptText.set(el, context.toLowerCase());
       if (context && hideActive() && hideCfg.words.length) {
         const root = cardRoot(el);
         const reason = hideReasonFor(el, root);
         if (reason) { c.jobId = null; hideRoot(root, reason); updateGroups(); updateStatus(); return; }
       }
-      const res = await withTimeout(
-        chrome.runtime.sendMessage({ action: "rewrite", text: c.origText, article: c.url, context, label: c.label,
-          urlText: context.length >= SHORT_EXCERPT ? "" : urlText(c.url), jobId }),
-        90000, { timeout: true });
+      const res = await requestRewrite(c, context, jobId);
       if (!alive(job)) return;
       if (res && res.timeout) {
         chrome.runtime.sendMessage({ action: "cancelJob", jobId }).catch(() => {});
@@ -1277,10 +1264,14 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     }
   }
 
+  // v1.94: overskrifter, der venter på at komme i nærheden af skærmen. Scanningen læser ikke deres tekst igen
+  // (det sker, når de kommer i syne – processOne tjekker den der)
+  const waiting = new Set();
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
       io.unobserve(e.target);
+      waiting.delete(e.target);
       if (!cards.has(e.target)) processOne(e.target);
     }
   }, { rootMargin: "200% 0px" });  // to skærmhøjder frem: overskrifterne er klar, før man scroller ned til dem
@@ -1289,6 +1280,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     if (!enabled) return;
     // v1.90 (audit F-01): kort, som siden har fjernet, glemmes (og deres opgave annulleres), så de ikke fylder i hukommelsen
     for (const el of [...tracked]) if (!el.isConnected) resetCard(el, false);
+    for (const el of waiting) if (!el.isConnected) { waiting.delete(el); io.unobserve(el); }
     const els = [...document.querySelectorAll(selector())];
     const fresh = [];
     // 1) Skal kortet skjules? Afgøres pr. kort (et kort kan have flere overskriftselementer).
@@ -1296,8 +1288,8 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     const carousel = SITE === "eb" ? [...document.querySelectorAll(CAROUSEL_ITEM)]
       : SITE === "bt" ? [...document.querySelectorAll(BT_PODCAST)] : [];
     const decided = new Map();
+    // v1.94: kendte kort tjekkes ikke igen her – det sker ved hver ændring på siden (touchedCards i handleMutations)
     for (const el of [...els, ...carousel]) {
-      checkReuse(el);
       if (inExcludedRegion(el) || isOwn(el)) continue;
       const root = cardRoot(el);
       if (!decided.get(root)) decided.set(root, hideReasonFor(el, root));
@@ -1319,14 +1311,18 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     // 2) Synlige overskrifter omskrives
     for (const el of els) {
       if (isHiddenEl(el)) continue;
-      if (cards.has(el) || !isCandidate(el)) continue;
+      if (cards.has(el)) continue;
+      if (waiting.has(el)) { fresh.push(el); continue; }   // venter allerede (v1.94)
+      if (!isCandidate(el)) continue;
       if (noAIEl(el)) continue;      // BT's korte videoer (v1.30) og spil (v1.31) sendes ikke til AI'en
       if (!looksLikeHeadline(cleanText(el))) continue;
       fresh.push(el);
     }
     // Hvis både et element og et barn af det matcher, så brug kun barnet
-    fresh.filter(el => !fresh.some(o => o !== el && el.contains(o))).forEach(el => io.observe(el));
-    if (!fresh.length && !processedCount && !pending.length && !running) showStatus("Fandt ingen overskrifter (endnu)");
+    fresh.filter(el => !waiting.has(el) && !fresh.some(o => o !== el && el.contains(o))).forEach(el => { waiting.add(el); io.observe(el); });
+    // v1.94: kun når siden slet ingen overskrifter har (heller ingen fejlede, afviste, beholdte eller skjulte) – ellers
+    // bliver optællingen og en evt. fejlbesked stående (før: når intet var omskrevet, også hvis alle havde fejlet)
+    if (!fresh.length && !tracked.size && !hiddenRoots.size && !pending.length && !running) showStatus("Fandt ingen overskrifter (endnu)");
   }
 
   // ---------------------------------------------------------------------
@@ -1337,7 +1333,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     runId++;                               // alt igangværende arbejde er nu ugyldigt
     pending.length = 0;
     timers.forEach(clearTimeout); timers.clear();
-    io.disconnect();
+    io.disconnect(); waiting.clear();
     unhideAll();                           // slukket: alt vises igen
     for (const el of [...tracked]) resetCard(el, true);
     processedCount = 0; failCount = 0; lastError = "";
@@ -1353,7 +1349,38 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
 
   // Observeren oprettes altid, så nye nyhedskort også fanges, hvis UnbaitDK tændes senere (fund 04).
   // Udvidelsens egne ændringer ignoreres, så statusboksen ikke udløser nye scanninger (fund S04).
-  let scanTimer = null;
+  // v1.94: scanningen venter på 400 ms ro, men højst SCAN_MAX_WAIT efter den første ændring – ellers kørte den aldrig
+  // på sider, der ændrer sig hele tiden (et ur, en ticker), og nye kort blev ikke fundet
+  const SCAN_QUIET = 400, SCAN_MAX_WAIT = 1000;
+  let scanTimer = null, scanDue = 0;
+  function scheduleScan() {
+    const now = Date.now();
+    if (!scanDue) scanDue = now + SCAN_MAX_WAIT;
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(() => { scanTimer = null; scanDue = 0; scan(); }, Math.max(0, Math.min(SCAN_QUIET, scanDue - now)));
+  }
+  // v1.94: de kendte kort, en række ændringer kan have rørt – fundet ud fra ændringerne, ikke ved at gennemgå alle kort:
+  // ændringen er sket i kortet (samme område, som findArticleUrl finder linket i), inde i overskriften, på et link om
+  // overskriften, eller kortet er sat ind på ny. Før blev alle kendte kort tjekket ved hver ændring – også ved et ur
+  // uden for kortene. Fjernede kort glemmes ved næste scanning.
+  const LINK_SCOPE = "article, [class*='teaser'], [class*='Teaser'], [class*='dre-item']";
+  function touchedCards(mutations) {
+    const out = new Set();
+    const addIn = (root) => {
+      if (!root) return;
+      if (tracked.has(root)) out.add(root);
+      for (const e of root.querySelectorAll("[data-unbait]")) if (tracked.has(e)) out.add(e);
+    };
+    for (const m of mutations) {
+      const t = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+      if (!t?.isConnected) continue;
+      addIn(t.closest(LINK_SCOPE));                                          // ændring i kortet
+      const own = t.closest("[data-unbait]"); if (own && tracked.has(own)) out.add(own);   // ændring i overskriften
+      if (m.type === "attributes") addIn(t);                                  // et link om overskriften har fået ny adresse
+      if (m.type === "childList") for (const n of m.addedNodes) if (n.nodeType === 1) addIn(n);   // kort sat ind (igen)
+    }
+    return out;
+  }
   // Siden har fjernet statusboksen eller udvidelsens stylesheet (fx DR, når sidens script overtager
   // siden): de sættes ind igen med det samme. Indsættelsen ignoreres af filteret nedenfor (v1.40).
   function restoreOwn() {
@@ -1372,18 +1399,17 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
       return ![...m.addedNodes, ...m.removedNodes].every(n => n.nodeType === 1 && n.matches?.("#unbait-status, #unbait-style"));
     });
     if (!relevant) return;
-    // Kendte kort tjekkes med det samme, så et forældet svar ikke kan nå at blive indsat;
-    // den forsinkede scanning tager sig af nye kort og genbehandling
-    for (const el of [...tracked]) checkReuse(el);
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(scan, 400);
+    // Berørte kort tjekkes med det samme, så et forældet svar ikke kan nå at blive indsat;
+    // den forsinkede scanning tager sig af nye kort og genbehandling (og tjekker alle kendte kort)
+    for (const el of touchedCards(mutations)) checkReuse(el);
+    scheduleScan();
   }
   // Navnet under tælleren i statusboksen (v1.75: »+ flere«, når puljen kan bruges)
   function refreshAiName() {
     chrome.runtime.sendMessage({ action: "getEnabled" }, (res) => {
       if (chrome.runtime.lastError || !res) return;
       aiName = res.model || "";
-      if (statusEl && lastStatus) { const m = statusEl.firstChild?.textContent?.replace(/^unbAIt DK: /, "") || ""; showStatus(m, statusEl.style.background.includes("185"), lastDetail); }
+      if (statusEl && lastStatus) showStatus(lastMsg, lastIsError, lastDetail);   // v1.94: samme besked og farve som før
     });
   }
   // Baggrunden siger til, når nøglerne er ændret (dem kan indholdsscriptet ikke selv se)
@@ -1395,7 +1421,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     // v1.64: også modelskift hos OpenAI og OpenRouter (Gemini skifter udbyder med modellen)
     // v1.75: også puljen og nøglerne (»+ flere« efter modelnavnet)
     if (area === "sync" && (changes.provider || changes.openaiModel || changes.openrouterModel || changes.groqModel || changes.pool)) refreshAiName();
-    if (area === "sync" && (changes.hideCats || changes.hidePlus || changes.hideAds || changes.hideAdsAvisen || changes.hideGames || changes.hideWords || changes.hideMode)) {
+    if (area === "sync" && Object.keys(HIDE_DEFAULTS).some(k => changes[k])) {
       // Nye skjul-indstillinger gælder med det samme
       loadHideCfg().then(() => { if (!enabled) return; unhideAll(); scan(); updateStatus(); });
     }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "unbAIt DK",
-  "version": "1.0.93",
+  "version": "1.0.94",
   "description": "Erstatter clickbait-overskrifter på danske nyhedssider med neutrale overskrifter skrevet af AI. Du vælger selv AI-udbyderen.",
   "permissions": [
     "storage",
@@ -70,6 +70,7 @@
         "*://*.tv2.dk/*"
       ],
       "js": [
+        "shared.js",
         "sites.js",
         "content.js"
       ],
@@ -87,7 +88,7 @@
   },
   "icons": {
     "16": "icons/on-16.png",
-    "32": "icons/on-48.png",
+    "32": "icons/on-32.png",
     "48": "icons/on-48.png",
     "128": "icons/on-128.png"
   },
@@ -136,5 +137,5 @@
     }
   ],
   "author": "Thomas Lytken",
-  "version_name": "1.93"
+  "version_name": "1.94"
 }
