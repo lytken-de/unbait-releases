@@ -2,7 +2,7 @@
 
 Chrome-udvidelsen **unbAIt DK** omskriver clickbait-overskrifter på danske nyhedssider til neutrale, informative overskrifter med AI.
 
-Dette repo indeholder den nyeste færdige udgave af udvidelsen (filerne i roden), `latest.json` med versionsnummeret og zip-filerne for hver version i `releases/`.
+Dette repo indeholder den nyeste færdige udgave af udvidelsen (filerne i roden), `latest.json` med versionsnummeret og zip-filen med samme version i `releases/`. Ældre versioner ligger ikke her.
 
 ## Installation og opdatering med git
 1. Hent repoet:
@@ -17,7 +17,7 @@ Udvidelsen viser selv en besked i indstillingerne, når der er en ny version.
 **ChromeOS:** git kræver Linux-miljøet (Terminal → penguin). Læg mappen under **My files** og del den med Linux (højreklik → Del med Linux), og hent repoet ind i den, fx `git clone https://github.com/lytken-de/unbait-releases.git /mnt/chromeos/MyFiles/unbait`. Indlæst fra »Linux files« virker udvidelsen ikke efter en genstart, før Linux er startet.
 
 ## Installation og opdatering med zip
-1. Hent zip-filen for den nyeste version i `releases/` (linket står også i `latest.json`).
+1. Hent zip-filen i `releases/` (linket står også i `latest.json`).
 2. Pak den ud i en mappe, og indlæs mappen med **Indlæs upakket** på `chrome://extensions`.
 3. Opdatering: pak den nye zip-fil ud over den gamle mappe, og tryk på genindlæs.
 
