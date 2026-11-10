@@ -1,5 +1,5 @@
 {
-  "version": "1.93",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.93-chrome.zip",
-  "notes": "Statusboksen viser nu hele fejlbeskeden (fx når Kilo-grænsen er nået), nye brugere får den nyeste standardprompt, og beskrivelsen på chrome://extensions er opdateret."
+  "version": "1.94",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.94-chrome.zip",
+  "notes": "Oprydning i koden og hurtigere på nyhedssiderne. Rettet: nye nyheder blev ikke omskrevet på sider, der hele tiden ændrer sig, og statusboksen viser nu fejlen i stedet for »Fandt ingen overskrifter«."
 }
