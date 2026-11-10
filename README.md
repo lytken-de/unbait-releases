@@ -14,7 +14,6 @@ Dette repo indeholder den nyeste færdige udgave af udvidelsen (filerne i roden)
 
 Udvidelsen viser selv en besked i indstillingerne, når der er en ny version.
 
-**ChromeOS:** git kræver Linux-miljøet (Terminal → penguin). Læg mappen under **My files** og del den med Linux (højreklik → Del med Linux), og hent repoet ind i den, fx `git clone https://github.com/lytken-de/unbait-releases.git /mnt/chromeos/MyFiles/unbait`. Indlæst fra »Linux files« virker udvidelsen ikke efter en genstart, før Linux er startet.
 
 ## Installation og opdatering med zip
 1. Hent zip-filen i `releases/` (linket står også i `latest.json`).
