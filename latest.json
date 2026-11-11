@@ -1,5 +1,5 @@
 {
-  "version": "1.94",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.94-chrome.zip",
-  "notes": "Oprydning i koden og hurtigere på nyhedssiderne. Rettet: nye nyheder blev ikke omskrevet på sider, der hele tiden ændrer sig, og statusboksen viser nu fejlen i stedet for »Fandt ingen overskrifter«."
+  "version": "1.95",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.95-chrome.zip",
+  "notes": "Rettet: Jyllands-Posten omskrev kun én overskrift efter avisens nye design. Nu omskrives overskrifterne på forsiden, sektionerne og artikelsiderne igen."
 }

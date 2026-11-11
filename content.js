@@ -174,7 +174,8 @@
   function findArticleUrl(el) {
     // v1.89: Y.dk – linket ligger enten om overskriften eller som et lag over hele kortet (<article> > a).
     // Artikelsidens egen overskrift står i en <article> med links i brødteksten; den har intet lag og sendes ikke.
-    const a = Y ? el.closest("a[href]") || el.closest("article")?.querySelector(":scope > a[href]")
+    // v1.95: det samme på Jyllands-Posten efter det nye design
+    const a = (Y || SITE === "jp") ? el.closest("a[href]") || el.closest("article")?.querySelector(":scope > a[href]")
       : el.closest("a[href]") || el.querySelector("a[href]") ||
         el.closest("article, [class*='teaser'], [class*='Teaser'], [class*='dre-item']")?.querySelector("a[href]");
     if (!a) return "";
@@ -1235,7 +1236,9 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     // har a.dre-teaser-title i #hydra-more-news, ikke hydra-klasserne
     if (SITE === "dr") return "a.hydra-card-title, a.hydra-teaser-title, #hydra-more-news a.dre-teaser-title";
     if (SITE === "politiken") return 'a[href*="/art"] :is(h1, h2, h3, h4, h5)';
-    if (SITE === "jp") return 'a[href*="/ECE"] :is(h1, h2, h3, h4)';
+    // v1.95: JP's nye design (nov. 2026) – kortet er en <article> med et tomt link som lag over hele kortet og
+    // overskriften ved siden af linket. Nyhedsoverblikket øverst har stadig overskriften inde i linket.
+    if (SITE === "jp") return 'a[href*="/ECE"] :is(h1, h2, h3, h4), article:has(> a[href*="/ECE"]) :is(h1, h2, h3, h4)';
     if (SITE === "avisen") return "a.FrontpageBox .Header";
     if (JFM) return ".teaser__title, .list-article__title";   // v1.80; v1.81: også boksen »Mest læste«
     // v1.89: Y.dk – kun kort med et link (om overskriften eller som lag over kortet), ikke artikelsidens egen overskrift
