@@ -1,5 +1,5 @@
 {
-  "version": "1.95",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.95-chrome.zip",
-  "notes": "Rettet: Jyllands-Posten omskrev kun én overskrift efter avisens nye design. Nu omskrives overskrifterne på forsiden, sektionerne og artikelsiderne igen."
+  "version": "1.96",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.96-chrome.zip",
+  "notes": "Rettet: boksen »Læs også« i artiklerne på Fyens Stiftstidende og de andre JFM-aviser blev ikke omskrevet. Nu omskrives den."
 }

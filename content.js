@@ -234,7 +234,7 @@
     avisen: [".ThemeBox.Category-forbrugerguides", "a.FrontpageBox"],
     nyheder24: ["article.post-card", "a.recent-news-slider__item"], politiken: ["article", "li"], jp: ["article", "li"],
     // v1.83: JFM-medier – punktet i »Mest læste« eller hele kortet
-    jfm: ["li.list__item", "article.teaser"],
+    jfm: ["li.list__item", "article.teaser", "article.related-article"],   // v1.96: kortet i »Læs også«
     // v1.89: Y.dk – hele kortet
     y: ["article"] };
   // BT's podcast-række ("PODCAST"): kortene skjules som andre kort, men omskrives ikke. Kortet er listepunktet
@@ -1240,7 +1240,9 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     // overskriften ved siden af linket. Nyhedsoverblikket øverst har stadig overskriften inde i linket.
     if (SITE === "jp") return 'a[href*="/ECE"] :is(h1, h2, h3, h4), article:has(> a[href*="/ECE"]) :is(h1, h2, h3, h4)';
     if (SITE === "avisen") return "a.FrontpageBox .Header";
-    if (JFM) return ".teaser__title, .list-article__title";   // v1.80; v1.81: også boksen »Mest læste«
+    // v1.80; v1.81: også boksen »Mest læste«; v1.96: også »Læs også« i artiklerne (h3.related-article__title i
+    // a.related-article__link i article.related-article; boksen sættes ind af sidens script efter indlæsningen)
+    if (JFM) return ".teaser__title, .list-article__title, .related-article__title";
     // v1.89: Y.dk – kun kort med et link (om overskriften eller som lag over kortet), ikke artikelsidens egen overskrift
     // v1.90: også de grå tekstkort uden billede (article.bg-surface-toggle), hvor overskriften står i et <p>.
     // Kun de grå kort – <p> i andre kort er underrubrikker
