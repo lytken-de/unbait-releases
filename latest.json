@@ -1,5 +1,5 @@
 {
-  "version": "1.96",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.96-chrome.zip",
-  "notes": "Rettet: boksen »Læs også« i artiklerne på Fyens Stiftstidende og de andre JFM-aviser blev ikke omskrevet. Nu omskrives den."
+  "version": "1.97",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.97-chrome.zip",
+  "notes": "Oprydning i koden efter en gennemgang – ingen ændring i det, du ser. Rettet: gendannelse af en sikkerhedskopi kunne efterlade tomme indstillinger, hvis skrivningen fejlede. Et tømt promptfelt fyldes nu med standardprompten, når det forlades."
 }

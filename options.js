@@ -1,3 +1,4 @@
+"use strict";
 
 // Standardprompten (DEFAULT_PROMPT), ordgrænserne, udbydernavnene (PROVIDER_NAMES), NEEDS_KEY, DeepSeek-tiderne,
 // Chromes indbyggede AI og standardværdierne for Skjul indhold står i shared.js (v1.94)
@@ -17,14 +18,14 @@ let standardPrompt = "";
 // ---- Udbydere: én fast model hver (kommer fra baggrundsscriptet) ----
 // AWS Bedrock (Gemma 4) er fjernet i v1.50
 const isLocal = (p) => p === "chrome_local";
-const KEY_PLACEHOLDER = { openai: "sk-…", anthropic: "sk-ant-…", gemini: "AIza…", gemini_free: "AIza…", deepseek: "sk-…", groq: "gsk_…", openrouter: "sk-or-v1-…", kilo_key: "Din Kilo-nøgle" };
+// Nøglefeltets pladsholder pr. udbyder – fra registret PROVIDERS (shared.js, v1.97)
+const KEY_PLACEHOLDER = Object.fromEntries(Object.entries(PROVIDERS).filter(([, P]) => P.keyPlaceholder).map(([p, P]) => [p, P.keyPlaceholder]));
 // Egne gratis-grænser pr. udbyder (gratis Gemini og Groq) (v1.27)
 let TIER_LIMITS = {}, TIER_DEFAULTS = {}, TIER_KEYS = {};
 const isTier = (t) => !!TIER_DEFAULTS[t];
 let currentTier = null;
 let paidPerUsd = 0;   // v1.75: estimeret omskrivninger pr. USD for den valgte betalte model (forsiden)
 let usage = null;   // dagens forbrug for den valgte gratis-tæller (v1.73)
-let FIXED = {};
 // OpenRouter (v1.51): modellerne i den ekstra liste (kommer fra baggrundsscriptet) og det gemte valg
 // ---- Én modelliste (v1.67) ----
 // Baggrundsscriptet sender alle udbyderes modeller (modelGroups): gruppe = værdien i "AI-udbyder",
@@ -174,7 +175,8 @@ function $(id) { return document.getElementById(id); }
 // Genkend nøgler, der tydeligvis hører til en anden udbyder.
 // Google-nøgler begynder med "AIza", Anthropic med "sk-ant-", Groq med "gsk_". OpenAI og DeepSeek
 // begynder begge med "sk-", så dem kan man ikke skelne – de tjekkes kun mod de andre.
-const FAMILY = { gemini: "google", gemini_free: "google", anthropic: "anthropic", openai: "sk", deepseek: "sk", groq: "groq", openrouter: "openrouter" };
+// Nøglens kendetegn pr. udbyder (keyFamily i PROVIDERS); Amazon Nova og Kilo har intet kendt format
+const FAMILY = Object.fromEntries(Object.entries(PROVIDERS).filter(([, P]) => P.keyFamily).map(([p, P]) => [p, P.keyFamily]));
 const FAMILY_NAMES = { google: "Google Gemini", anthropic: "Anthropic/Claude", sk: "OpenAI- eller DeepSeek", groq: "Groq", openrouter: "OpenRouter" };
 function keyFamily(key) {
   if (/^gsk_/.test(key)) return "groq";
@@ -195,14 +197,8 @@ function keyMismatch(provider, key) {
 }
 
 const KEY_HINT = "Gemmes kun i denne browser og synkroniseres ikke.";
-const FREE_HINTS = {
-  gemini_free: "unbAIt DK's egne grænser for gratis-niveauet. Tjek dine faktiske grænser i Google AI Studio.",
-  groq: "unbAIt DK's egne grænser for gratis-niveauet. Tjek dine faktiske grænser på console.groq.com under Settings → Limits.",
-  nova_free: "unbAIt DK's egne grænser for gratis-niveauet. Tjek dine faktiske grænser på nova.amazon.com under API Keys.",
-  openrouter: "unbAIt DK's egne grænser for gratis-niveauet. Tjek dine faktiske grænser på openrouter.ai under Settings.",
-  kilo: "unbAIt DK's egen grænse. Kilo tillader ca. 100 kald i timen uden nøgle.",   // v1.87
-  kilo_key: "unbAIt DK's egen grænse. Kilo tillader ca. 300 kald i timen med en gratis konto."
-};
+// Teksten under grænserne (hint i PROVIDERS)
+const FREE_HINTS = Object.fromEntries(Object.entries(PROVIDERS).filter(([, P]) => P.hint).map(([p, P]) => [p, P.hint]));
 // v1.87: Kilo Code har kun en grænse pr. time (RPH)
 const isHourTier = (t) => !!TIER_DEFAULTS[t] && TIER_DEFAULTS[t].rph !== undefined;
 // Forbruget mod den grænse, der gælder: { used, limit, label, ring } (pr. time for Kilo, ellers pr. dag)
@@ -221,23 +217,21 @@ function showAiNote() {
 async function showFreeInfo() {
   const box = $("freeBox"), p = currentProvider, t = currentTier;
   // Betalte OpenRouter-modeller (v1.62) har ingen gratis-grænser
-  if (!isTier(t) || (p === "openrouter" && orPaid())) { box.style.display = "none"; $("freeRow").style.display = "none"; $("aiNote").textContent = ""; usage = null; updateHome(); return; }
+  if (!isTier(t) || (p === "openrouter" && orPaid())) { box.style.display = "none"; $("freeRow").style.display = "none"; $("aiNote").textContent = ""; usage = null; showStats(); return; }
   let u = { requests: 0, tokens: 0 };
   try { u = await chrome.runtime.sendMessage({ action: "freeUsage", tier: t }); } catch {}
   if (p !== currentProvider || t !== currentTier) return;
-  const n = (x) => Number(x || 0).toLocaleString("da-DK");
   // "Brugt i dag" som række i listen under Model (v1.33)
   usage = u;
   const note = document.createElement("span"); note.className = "st-note";
   note.textContent = p === "gemini_free" ? " nulstilles ca. kl. 9" : "";
-  if (isHourTier(t)) { const L = readLimits(t); $("freeRowK").textContent = "Brugt i denne time"; $("freeInfo").replaceChildren(`${n((u.hour || []).length)} / ${n(L.rph)} kald`); }   // v1.87
-  else { $("freeRowK").textContent = "Brugt i dag"; $("freeInfo").replaceChildren(`${n(u.requests)} kald · ${n(u.tokens)} tokens`, note); }
+  if (isHourTier(t)) { const L = readLimits(t); $("freeRowK").textContent = "Brugt i denne time"; $("freeInfo").replaceChildren(`${nf((u.hour || []).length)} / ${nf(L.rph)} kald`); }   // v1.87
+  else { $("freeRowK").textContent = "Brugt i dag"; $("freeInfo").replaceChildren(`${nf(u.requests)} kald · ${nf(u.tokens)} tokens`, note); }
   $("freeRow").style.display = "";
   showAiNote();
   $("freeHint").textContent = FREE_HINTS[p] || "";
   box.style.display = "block";
-  updateHome();
-  showStats();
+  showStats();   // v1.97 (M6): Forbrug og forsiden opdateres herfra – én gang, også ved udbyderskift (showProvider kalder ikke selv showStats)
 }
 // ---- DeepSeek: dyr og billig tid ----
 // DeepSeek tager dobbelt pris på hverdage kl. 01–04 og 06–10 UTC (undtagen kinesiske helligdage; DEEPSEEK_PEAK_UTC og
@@ -272,7 +266,6 @@ async function showStats() {
   if (p !== currentProvider || key !== statsKeyOfChoice()) return;
   lastStats = s && s.calls ? s : null;
   paidPerUsd = 0; if (!s || !s.calls) updateHome();   // v1.75: sættes igen nedenfor, når der er et tal
-  const n = (x) => Number(x || 0).toLocaleString("da-DK");
   const box = $("stats");
   const tiles = [];
   const tile = (label, value, note, span) => {
@@ -295,35 +288,35 @@ async function showStats() {
     const hasOk = "ok" in s, hasRetries = "retries" in s;
     // KPI: godkendte omskrivninger og godkendt-procent (v1.73)
     const left = el("div", "");
-    left.append(el("div", "num", n(hasOk ? s.ok : s.calls)), el("div", "lbl", hasOk ? "godkendte omskrivninger" : "kald"),
-      el("div", "sub2", [hasOk ? `af ${n(s.calls)} kald` : "", hasRetries ? `${n(s.retries)} genforsøg` : ""].filter(Boolean).join(" · ")));
+    left.append(el("div", "num", nf(hasOk ? s.ok : s.calls)), el("div", "lbl", hasOk ? "godkendte omskrivninger" : "kald"),
+      el("div", "sub2", [hasOk ? `af ${nf(s.calls)} kald` : "", hasRetries ? `${nf(s.retries)} genforsøg` : ""].filter(Boolean).join(" · ")));
     kpi.replaceChildren(left);
     if (hasOk) kpi.append(ring(Math.round(s.ok / s.calls * 100), "godkendt"));
     // Tokens
     if (isLocal(p)) {
       tile("Tokens", "Ingen", "kører lokalt, intet at betale for", true);
     } else {
-      const inTile = tile("Tokens ind", n(s.input), "", true);
+      const inTile = tile("Tokens ind", nf(s.input), "", true);
       if (s.cached) {
         const pct = Math.min(100, s.cached / Math.max(1, s.input) * 100);
         const split = el("div", "split"); const bl = document.createElement("b"); bl.style.width = pct + "%"; const gr = document.createElement("i"); gr.style.width = (100 - pct) + "%"; split.append(bl, gr);
         const legend = el("div", "legend");
-        const l1 = el("span", "", ""), e1 = el("em", ""); e1.style.background = "var(--accent)"; l1.append(e1, `heraf ${n(s.cached)} ind fra cache`);
-        const l2 = el("span", ""), e2 = el("em", ""); e2.style.background = "var(--gray-bar)"; l2.append(e2, `${n(Math.max(0, s.input - s.cached))} til fuld pris`);
+        const l1 = el("span", "", ""), e1 = el("em", ""); e1.style.background = "var(--accent)"; l1.append(e1, `heraf ${nf(s.cached)} ind fra cache`);
+        const l2 = el("span", ""), e2 = el("em", ""); e2.style.background = "var(--gray-bar)"; l2.append(e2, `${nf(Math.max(0, s.input - s.cached))} til fuld pris`);
         legend.append(l1, l2); inTile.append(split, legend);
       }
       const hasSpeed = !!s.timed;
-      tile("Tokens ud", n(s.output), "modellens svar", !hasSpeed);
+      tile("Tokens ud", nf(s.output), "modellens svar", !hasSpeed);
     }
     if (s.timed) tile("Svartid", `${speedText(s)} sek.`, "pr. kald", isLocal(p));
     // Omskrivninger pr. USD, afrundet til hele hundreder fra 1.000 (v1.75: også på forsiden)
     const perUsd = hasOk && s.cost > 0 && s.ok > 0 ? s.ok / s.cost : 0;
     paidPerUsd = perUsd ? (perUsd >= 1000 ? Math.round(perUsd / 100) * 100 : Math.round(perUsd)) : 0; updateHome();
-    if (perUsd) tile("Estimeret omskrivninger pr. USD", "≈ " + n(paidPerUsd), "", true);
+    if (perUsd) tile("Estimeret omskrivninger pr. USD", "≈ " + nf(paidPerUsd), "", true);
     if (isTier(currentTier) && !orPaid() && usage) {
       const L = readLimits(currentTier), uv = usedVsLimit(usage, L);
-      const t = isHourTier(currentTier) ? tile(uv.label, `${n(uv.used)} / ${n(uv.limit)} kald`, "", true)   // v1.87
-        : tile("Brugt i dag", `${n(usage.requests)} kald · ${n(usage.tokens)} tokens`, "", true);
+      const t = isHourTier(currentTier) ? tile(uv.label, `${nf(uv.used)} / ${nf(uv.limit)} kald`, "", true)   // v1.87
+        : tile("Brugt i dag", `${nf(usage.requests)} kald · ${nf(usage.tokens)} tokens`, "", true);
       const pct = uv.limit > 0 ? Math.min(100, uv.used / uv.limit * 100) : 0;
       const m = el("div", "meter"); const mb = document.createElement("b"); mb.style.width = pct + "%"; m.append(mb); t.append(m);
     }
@@ -365,9 +358,8 @@ function showProvider(p) {
   $("limTpd").parentElement.style.display = hasTpd ? "" : "none";
   $("limGrid").className = hasTpd ? "g2" : hour ? "g1" : "g3";
   updateKeyHint();
-  showFreeInfo();
+  showFreeInfo();   // kalder showStats (og dermed updateHome), når forbruget er læst
   showPool();
-  showStats();
   showPeakInfo();
   if (isLocal(p)) showLocalStatus();
   updateHome();
@@ -401,9 +393,9 @@ async function downloadLocal() {
       m.addEventListener("downloadprogress", (e) => { $("localStatus").textContent = `Henter modellen… ${Math.round(e.loaded * 100)} %`; });
     } });
     s.destroy?.();
-    showStatus("Modellen er hentet og klar.", true);
+    showStatus("Modellen er hentet og klar.");
   } catch (e) {
-    showStatus("Kunne ikke hente modellen: " + (e.message || e), false);
+    showStatus("Kunne ikke hente modellen: " + (e.message || e), { error: true });
   } finally {
     $("localDownload").disabled = false;
     showLocalStatus();
@@ -424,6 +416,16 @@ function allLimits() {
   return isTier(currentTier) ? { ...TIER_LIMITS, [currentTier]: readLimits(currentTier) } : { ...TIER_LIMITS };
 }
 
+// v1.97 (L6, brugerens valg 12. nov. 2026: »Feltet fyldes igen«): et tomt promptfelt gemmes som standardprompten (readForm),
+// og når feltet forlades – eller gemmes, mens det ikke har fokus – sættes standardprompten ind i feltet, så det viser det,
+// der gælder. Mens brugeren skriver i feltet, røres det ikke.
+function fillEmptyPrompt() {
+  const f = $("prompt");
+  if (f.value.trim() || document.activeElement === f) return false;
+  f.value = DEFAULT_PROMPT; updatePromptCount();
+  showStatus("Feltet var tomt – standardprompten er sat ind.");
+  return true;
+}
 function readForm() {
   return {
     provider: chosenProvider(),
@@ -472,21 +474,22 @@ async function askSitePermission(input) {
   try { ok = await chrome.permissions.request({ origins: site.matches }); } catch { ok = false; }
   if (!ok) {
     input.checked = false;
-    showStatus(`Chrome gav ikke lov til ${site.name}. Fluebenet er fjernet.`, false);
+    showStatus(`Chrome gav ikke lov til ${site.name}. Fluebenet er fjernet.`, { error: true });
   }
 }
 
 // ---- Status (v1.44: visningsfeltet i toppen): grønne beskeder forsvinder selv, fejl bliver stående ----
+// v1.97 (M5): samme form som statusboksen på nyhedssiden – showStatus(besked, { error }) (før betød 2. parameter »ok« her og »fejl« dér)
 let statusTimer = null;
-function showStatus(msg, ok, hideAfter = ok ? 5000 : 0) {
+function showStatus(msg, { error = false, hideAfter = error ? 0 : 5000 } = {}) {
   const el = $("status");
   clearTimeout(statusTimer);
   el.hidden = false;
   el.classList.remove("hiding");
-  el.className = "status " + (ok ? "ok" : "err");
+  el.className = "status " + (error ? "err" : "ok");
   $("statusMsg").textContent = msg;
   el.title = msg;                      // hele teksten, hvis den er for lang til feltet
-  $("statusClose").hidden = !!ok;      // v1.65: fejl bliver stående og kan lukkes med ×
+  $("statusClose").hidden = !error;    // v1.65: fejl bliver stående og kan lukkes med ×
   if (hideAfter) statusTimer = setTimeout(hideStatus, hideAfter);
 }
 function hideStatus() {
@@ -501,7 +504,7 @@ let savedTimer = null;
 const PROMPT_TOKEN_LIMIT = 1000;
 function updatePromptCount() {
   const v = $("prompt").value.trim();
-  const words = v ? v.split(/\s+/).length : 0, tokens = Math.round(v.length / 3.5);
+  const words = wordCount(v), tokens = Math.round(v.length / 3.5);
   $("pcount").textContent = `${words.toLocaleString("da-DK")} ord · ca. ${tokens.toLocaleString("da-DK")} tokens`;
   $("pwarn").hidden = tokens <= PROMPT_TOKEN_LIMIT;
   renderPromptKpi(words, tokens);
@@ -549,8 +552,8 @@ async function showLog() {
 async function copyLog() {
   // v1.91: kun de viste beskeder (filter og søgning) – før altid hele loggen
   const text = logShown((await readLog()).slice().reverse()).map(e => `${logTime(e.t)} ${LOG_LABEL[e.level] || e.level}${e.model && e.level !== "info" ? " (" + e.model + ")" : ""}: ${e.msg}`).join("\n");
-  try { await navigator.clipboard.writeText(text); showStatus("Loggen er kopieret.", true); }
-  catch (e) { showStatus("Kunne ikke kopiere loggen: " + (e.message || e), false); }
+  try { await navigator.clipboard.writeText(text); showStatus("Loggen er kopieret."); }
+  catch (e) { showStatus("Kunne ikke kopiere loggen: " + (e.message || e), { error: true }); }
 }
 
 function showSaved() {
@@ -640,7 +643,7 @@ async function doSave() {
     // Ændringerne er IKKE gemt – de bliver stående i felterne og prøves igen ved næste ændring (fund S07)
     apiKeys = before; apiKeys[currentProvider] = $("apiKey").value.trim();
     setSaveState("error");
-    showStatus("Kunne ikke gemme: " + (e.message || e) + ". Dine ændringer er ikke gemt.", false);
+    showStatus("Kunne ikke gemme: " + (e.message || e) + ". Dine ændringer er ikke gemt.", { error: true });
     return false;
   }
   TIER_LIMITS = limits;
@@ -648,9 +651,10 @@ async function doSave() {
   savedSnapshot = snap;
   setSaveState("saved");
   showSaved();   // v1.65: altid den lille »✓ Gemt« – en fejl i feltet bliver stående
-  if (wErr) { showStatus(wErr + " Ordgrænserne er ikke gemt.", false); return true; }
+  fillEmptyPrompt();   // v1.97 (L6): et tomt felt, der ikke har fokus, fyldes med den standardprompt, der blev gemt
+  if (wErr) { showStatus(wErr + " Ordgrænserne er ikke gemt.", { error: true }); return true; }
   const warn = keyMismatch(s.provider, s.apiKey);
-  if (warn) showStatus("Gemt, men bemærk: " + warn, false);
+  if (warn) showStatus("Gemt, men bemærk: " + warn, { error: true });
   return true;
 }
 
@@ -658,7 +662,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const mf = chrome.runtime.getManifest();
   $("version").textContent = "v. " + (mf.version_name || mf.version);
   const info = await chrome.runtime.sendMessage({ action: "modelInfo" });
-  FIXED = info.models;
   TIER_LIMITS = { ...info.tierLimits }; TIER_DEFAULTS = { ...info.tierDefaults }; TIER_KEYS = { ...info.tierKeys };
   GROUPS = info.modelGroups || {};
   POOL_ENTRIES = info.poolEntries || [];
@@ -679,7 +682,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   showSites(data.sites);
   const local = await chrome.storage.local.get({ apiKeys: {} });
   apiKeys = { ...local.apiKeys };
-  const provider = FIXED[data.provider] ? data.provider : "openai";
+  const provider = isProvider(data.provider) ? data.provider : "openai";
 
   if (GEMINI.includes(provider)) chosenModel.gemini = provider;
   if (KILO.includes(provider)) chosenModel.kilo = provider;
@@ -714,6 +717,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     $("keyEye").title = show ? "Skjul nøgle" : "Vis nøgle";
   });
   $("prompt").addEventListener("input", updatePromptCount);
+  $("prompt").addEventListener("blur", () => { fillEmptyPrompt(); changed(); });   // v1.97 (L6)
   $("localDownload").addEventListener("click", downloadLocal);
   // Forsiden og panelerne (v1.73)
   document.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openPanel(b.dataset.open, b)));
@@ -747,25 +751,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("restoreOriginal").addEventListener("click", async () => {
     $("prompt").value = DEFAULT_PROMPT; updatePromptCount();
     const ok = await saveNow();
-    if (ok !== false || snapshot() === savedSnapshot) showStatus("Den oprindelige prompt er hentet ind og gemt.", true);
+    if (ok !== false || snapshot() === savedSnapshot) showStatus("Den oprindelige prompt er hentet ind og gemt.");
   });
   // Gendan min standard (hed »Nulstil prompt« før v1.63): henter standardprompten ind i feltet og gemmer den med det samme (v1.44)
   $("resetPrompt").addEventListener("click", async () => {
     $("prompt").value = standardPrompt || DEFAULT_PROMPT; updatePromptCount();
     const ok = await saveNow();
-    if (ok !== false || snapshot() === savedSnapshot) showStatus("Din standardprompt er hentet ind og gemt.", true);
+    if (ok !== false || snapshot() === savedSnapshot) showStatus("Din standardprompt er hentet ind og gemt.");
   });
   // Sæt min standard (hed »Sæt som standard« før v1.63): gemmer den nuværende tekst som standardprompt med det samme
   $("setStandard").addEventListener("click", async () => {
     const t = $("prompt").value.trim();
-    if (!t) { showStatus("Prompten er tom og kan ikke sættes som standard.", false); return; }
+    if (!t) { showStatus("Prompten er tom og kan ikke sættes som standard.", { error: true }); return; }
     await saveNow();                   // en igangværende gemning må ikke overskrive beskeden nedenfor (v1.44)
     try {
       await chrome.storage.sync.set({ standardPrompt: t });
       standardPrompt = t;
-      showStatus("Din standardprompt er sat.", true);
+      showStatus("Din standardprompt er sat.");
     } catch (e) {
-      showStatus("Kunne ikke sætte standardprompten: " + (e.message || e), false);
+      showStatus("Kunne ikke sætte standardprompten: " + (e.message || e), { error: true });
     }
   });
 
@@ -779,9 +783,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       await chrome.runtime.sendMessage({ action: "resetTokenStats", provider: statsKeyOfChoice() });
       showStats();
-      showStatus(`Forbrugstælleren for ${nameOf()} er nulstillet.`, true);
+      showStatus(`Forbrugstælleren for ${nameOf()} er nulstillet.`);
     } catch (e) {
-      showStatus("Kunne ikke nulstille: " + (e.message || e), false);
+      showStatus("Kunne ikke nulstille: " + (e.message || e), { error: true });
     }
   });
 
@@ -792,9 +796,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (r?.error) throw new Error(r.error);
       const n = r?.removed || 0;
       showStatus(n ? `${n.toLocaleString("da-DK")} gemte omskrivninger er slettet. Genindlæs nyhedssiden.`
-        : "Der er ingen gemte omskrivninger.", true);
+        : "Der er ingen gemte omskrivninger.");
     } catch (e) {
-      showStatus("Kunne ikke slette de gemte omskrivninger: " + (e.message || e), false);
+      showStatus("Kunne ikke slette de gemte omskrivninger: " + (e.message || e), { error: true });
     } finally {
       $("clearCache").disabled = false;
     }
@@ -1001,7 +1005,13 @@ function hideInfo() {
   const elems = [h.hidePlus && "Ekstra Bladet +", h.hideAds && "Annoncer (Ekstra Bladet)", h.hideGames && "Spil", h.hideAdsAvisen && "Annoncer (Avisen.dk)"].filter(Boolean);
   return { cats, words, elems, total: cats.length + words.length + elems.length, mode: h.hideMode === "dim" ? "vises som tynd linje" : "fjernes helt" };
 }
+// v1.97 (M6): forsiden genopbygges højst én gang pr. omgang – kaldene (tastetryk, udbyderskift, forbrug) samles i én kort pause
+let homeTimer = null;
 function updateHome() {
+  if (homeTimer) return;
+  homeTimer = setTimeout(() => { homeTimer = null; updateHomeNow(); }, 0);
+}
+function updateHomeNow() {
   if (!$("heroTitle") || !GROUPS || !Object.keys(GROUPS).length) return;
   const free = isTier(currentTier) && !orPaid(), local = isLocal(currentProvider);
   const sites = [...document.querySelectorAll("#sites input[data-site]")];
@@ -1049,7 +1059,7 @@ function updateHome() {
     if (ss.timed) nodes.push(el("span", "dimt", `· ${speedText(ss)} sek. svartid`));
     $("sumStats").replaceChildren(...nodes);
   }
-  const w = readWords(), pr = $("prompt").value.trim(), pw = pr ? pr.split(/\s+/).length : 0;
+  const w = readWords(), pr = $("prompt").value.trim(), pw = wordCount(pr);
   $("sumPrompt").replaceChildren(el("span", "big", `${nf(pw)} ord`), el("span", "pill", `Højst ${Number.isNaN(w.first) ? "?" : w.first} ord`), el("span", "pill", `2. forsøg: ${Number.isNaN(w.retry) ? "?" : w.retry} ord`));
 
   // KPI: AI
@@ -1139,8 +1149,8 @@ function initPromptSuggest() {
   $("pmVeil").addEventListener("click", (e) => { if (e.target === $("pmVeil")) closeSuggest(); });
   $("pmCopy").addEventListener("click", async () => {
     if (!suggestion?.prompt) return;
-    try { await navigator.clipboard.writeText(suggestion.prompt); showStatus("Forslaget er kopieret.", true); }
-    catch (e) { showStatus("Kunne ikke kopiere forslaget: " + (e.message || e), false); }
+    try { await navigator.clipboard.writeText(suggestion.prompt); showStatus("Forslaget er kopieret."); }
+    catch (e) { showStatus("Kunne ikke kopiere forslaget: " + (e.message || e), { error: true }); }
   });
   $("pmUse").addEventListener("click", async () => {
     if (!suggestion?.prompt) return;
@@ -1149,7 +1159,7 @@ function initPromptSuggest() {
     closeSuggest();
     await saveNow();
     await updateSuggestButtons();
-    showStatus("Forslaget bruges nu som prompt. »Fortryd: gendan forrige prompt« sætter den gamle tilbage.", true);
+    showStatus("Forslaget bruges nu som prompt. »Fortryd: gendan forrige prompt« sætter den gamle tilbage.");
   });
   $("undoPrompt").addEventListener("click", async () => {
     const { promptPrevious } = await chrome.storage.local.get("promptPrevious");
@@ -1158,7 +1168,7 @@ function initPromptSuggest() {
     await chrome.storage.local.remove("promptPrevious");
     await saveNow();
     await updateSuggestButtons();
-    showStatus("Den forrige prompt er sat tilbage.", true);
+    showStatus("Den forrige prompt er sat tilbage.");
   });
   $("provider").addEventListener("change", updateSuggestButtons);
   updateSuggestButtons();
@@ -1190,7 +1200,7 @@ async function initUpdateNotice() {
   } else {
     t.append("Hent zip-filen, pak den ud over den gamle mappe, og tryk på genindlæs på chrome://extensions.");
     $("updGet").textContent = `Hent version ${info.latest}`; $("updGet").hidden = false;
-    $("updGet").onclick = () => { if (/^https:\/\/github\.com\/lytken-de\/unbait-releases\//.test(info.zip)) window.open(info.zip, "_blank", "noopener"); };
+    $("updGet").onclick = () => { if (UPDATE_ZIP.test(info.zip)) window.open(info.zip, "_blank", "noopener"); };   // UPDATE_ZIP i shared.js
   }
   $("updLater").onclick = async () => { await chrome.storage.local.set({ updateDismissed: info.latest }).catch(() => {}); $("upd").hidden = true; };
   $("upd").hidden = false;
@@ -1266,18 +1276,40 @@ async function showRestore(data) {
   bkPending = { data, missing };
   $("bkVeil").hidden = false; $("bkCancel").focus({ preventScroll: true });
 }
+// v1.97: det, en sikkerhedskopi må sætte i storage.sync (nøglerne i dokumentationens afsnit 2) og værdiernes type.
+// Ukendte nøgler, forkerte typer og en udbyder, der ikke findes, springes over (resten gendannes).
+const SYNC_TYPES = { enabled: "boolean", provider: "string", openaiModel: "string", openrouterModel: "string", groqModel: "string", pool: "array",
+  prompt: "string", standardPrompt: "string", maxWordsFirst: "number", maxWordsRetry: "number", sites: "array", hideCats: "array",
+  hidePlus: "boolean", hideAds: "boolean", hideAdsAvisen: "boolean", hideGames: "boolean", hideWords: "string", hideMode: "string" };
+function cleanSync(sync) {
+  const out = {};
+  for (const [k, t] of Object.entries(SYNC_TYPES)) {
+    const v = sync[k];
+    if (t === "array" ? Array.isArray(v) : typeof v === t) out[k] = v;
+  }
+  if ("provider" in out && !isProvider(out.provider)) delete out.provider;
+  return out;
+}
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 async function doRestore() {
   if (!bkPending) return;
   const { data, missing } = bkPending;
+  const sync = cleanSync(data.sync);
+  if (!Object.keys(sync).length) throw new Error("Sikkerhedskopien indeholder ingen indstillinger, der kan gendannes.");
   // Chromes tilladelse skal bedes om med det samme (klikket på »Gendan« tæller som brugerens handling)
   let granted = true;
   if (missing.length) granted = await chrome.permissions.request({ origins: missing.flatMap(x => x.matches) }).catch(() => false);
-  await chrome.storage.sync.clear();
-  await chrome.storage.sync.set(data.sync);
+  // v1.97: først skrives det nye, derefter fjernes det, der ikke er i kopien. Fejler skrivningen (fx sync-lagerets
+  // kvote), er intet ændret, og de nuværende indstillinger står urørt (før blev lageret tømt først).
+  const before = await chrome.storage.sync.get(null);
+  await chrome.storage.sync.set(sync);
+  const stale = Object.keys(before).filter(k => !(k in sync));
+  if (stale.length) await chrome.storage.sync.remove(stale);
+  const localNew = Object.fromEntries(Object.entries(data.local || {}).filter(([k, v]) => (isLimitKey(k) || k === "keptArticles") && isObj(v)));
   const local = await chrome.storage.local.get(null);
   await chrome.storage.local.remove(Object.keys(local).filter(k => isLimitKey(k) || k === "keptArticles"));
-  await chrome.storage.local.set(data.local || {});
-  if (data.apiKeys) await chrome.storage.local.set({ apiKeys: data.apiKeys });
+  await chrome.storage.local.set(localNew);
+  if (isObj(data.apiKeys)) await chrome.storage.local.set({ apiKeys: Object.fromEntries(Object.entries(data.apiKeys).filter(([, v]) => typeof v === "string")) });
   await chrome.storage.local.set({ backupRestored: { at: Date.now(), missingDenied: granted ? [] : missing.map(x => x.name) } });
   location.reload();   // siden læser de gendannede indstillinger forfra
 }
@@ -1295,8 +1327,8 @@ function initBackup() {
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
       await chrome.storage.local.set({ backupSavedAt: Date.now() });
       updateBackupRow();
-      showStatus("Sikkerhedskopien er gemt.", true);
-    } catch (e) { showStatus("Kunne ikke gemme sikkerhedskopien: " + (e.message || e), false); }
+      showStatus("Sikkerhedskopien er gemt.");
+    } catch (e) { showStatus("Kunne ikke gemme sikkerhedskopien: " + (e.message || e), { error: true }); }
   });
   $("bkPick").addEventListener("click", () => { $("bkFile").value = ""; $("bkFile").click(); });
   $("bkFile").addEventListener("change", async () => {
@@ -1304,16 +1336,16 @@ function initBackup() {
     if (!f) return;
     $("bkFile").value = "";   // samme fil kan vælges igen efter »Annullér«
     try { await showRestore(readBackup(await f.text())); }
-    catch (e) { showStatus(e.message || String(e), false); }
+    catch (e) { showStatus(e.message || String(e), { error: true }); }
   });
   $("bkCancel").addEventListener("click", closeBackupModal);
   $("bkVeil").addEventListener("click", (e) => { if (e.target === $("bkVeil")) closeBackupModal(); });
-  $("bkDo").addEventListener("click", () => { doRestore().catch(e => showStatus("Kunne ikke gendanne: " + (e.message || e), false)); });
+  $("bkDo").addEventListener("click", () => { doRestore().catch(e => showStatus("Kunne ikke gendanne: " + (e.message || e), { error: true })); });
   updateBackupRow();
   // Efter gendannelse (siden er genindlæst): besked
   chrome.storage.local.get("backupRestored").then(({ backupRestored: r }) => {
     if (!r || Date.now() - r.at > 60000) return;
     chrome.storage.local.remove("backupRestored");
-    showStatus("Sikkerhedskopien er gendannet." + (r.missingDenied?.length ? ` Chrome gav ikke lov til ${r.missingDenied.join(" og ")} – sæt flueben under Sider igen for at prøve igen.` : ""), !r.missingDenied?.length);
+    showStatus("Sikkerhedskopien er gendannet." + (r.missingDenied?.length ? ` Chrome gav ikke lov til ${r.missingDenied.join(" og ")} – sæt flueben under Sider igen for at prøve igen.` : ""), { error: !!r.missingDenied?.length });
   }).catch(() => {});
 }

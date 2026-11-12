@@ -1,3 +1,4 @@
+"use strict";
 // Siderne, unbAIt DK kan virke på (v1.37). Bruges af baggrunden, indstillingerne og indholdsscriptet.
 // builtin: Ekstra Bladet, B.T. og TV 2 har adgang fra installationen. De andre sider beder Chrome
 // om lov første gang, brugeren sætter flueben (optional_host_permissions), og indholdsscriptet

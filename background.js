@@ -1,41 +1,11 @@
+"use strict";
 // Fælles værdier (v1.94: standardprompt, ordgrænser, udbydernavne m.m.) og fælles liste over siderne (v1.37)
 importScripts("shared.js", "sites.js");
 
-// Én fast model pr. udbyder – der er ikke en modelvælger.
-// AWS Bedrock (Gemma 4) er fjernet i v1.50: brugeren har nedlagt sin AWS-konto.
-const FIXED_MODELS = {
-  openai: "gpt-6-luna",
-  anthropic: "claude-haiku-5-5",
-  gemini: "gemini-flash-latest",
-  gemini_free: "gemini-3.5-flash-lite",
-  // Groq: OpenAI-kompatibelt API, gratis niveau (v1.27)
-  groq: "openai/gpt-oss-120b",
-  // Amazon Nova 2 Lite via Amazons egen Nova-API (api.nova.amazon.com), gratis udviklerniveau (v1.38)
-  nova_free: "nova-2-lite-v1",
-  // OpenRouter (v1.51): brugeren vælger selv model i en ekstra liste (OPENROUTER_MODELS) – dette er standardvalget
-  openrouter: "openrouter/free",
-  // Kilo Code (v1.84): Kilos AI Gateway, gratis modeller uden nøgle (anonymt 200 kald/time pr. IP); Auto Free vælger selv en gratis model
-  kilo: "kilo-auto/free",
-  // v1.85: samme model med brugerens gratis Kilo-konto (nøgle) – egen udbyder som gemini/gemini_free, så nøgle og forbrug er for sig
-  kilo_key: "kilo-auto/free",
-  // DeepSeek: "deepseek-flash" køres af DeepSeek-V4.1-Flash-1017 (ifølge DeepSeeks API-dokumentation)
-  deepseek: "deepseek-flash",
-  // Chromes indbyggede model (Prompt API) – kører lokalt, ingen nøgle
-  chrome_local: "gemini-nano"
-};
-const MODEL_NAMES = {
-  openai: "GPT-6 Luna",
-  anthropic: "Claude Haiku 5.5",
-  gemini: "Gemini Flash Latest",
-  gemini_free: "Gemini 3.5 Flash Lite (free tier - for development purposes only)",
-  groq: "GPT-OSS 120B",
-  nova_free: "Nova 2 Lite",
-  openrouter: "Free Models Router",
-  kilo: "Kilo Auto (free) · uden nøgle",
-  kilo_key: "Kilo Auto (free) · med nøgle",
-  deepseek: "DeepSeek-V4.1-Flash-1017",
-  chrome_local: "Gemini Nano i Chrome (lokalt, eksperimentel)"
-};
+// Udbyderne står i registret PROVIDERS (shared.js, v1.97); her afledes de tabeller, baggrunden bruger.
+// Én fast model pr. udbyder (ved en modelliste standardvalget) og modellens navn
+const FIXED_MODELS = Object.fromEntries(Object.entries(PROVIDERS).map(([p, P]) => [p, P.model]));
+const MODEL_NAMES = Object.fromEntries(Object.entries(PROVIDERS).map(([p, P]) => [p, P.modelName]));
 
 // ---- Log (v1.67): de samme beskeder som i konsollen, også i fanen "Log" i indstillingerne ----
 // Gemmes i storage.session (ryddes, når browseren lukkes), højst 500 (v1.86; før 100). Ingen API-nøgler i beskederne.
@@ -47,15 +17,30 @@ function serialQueue() {
   return (fn) => { const run = chain.then(fn); chain = run.catch(() => {}); return run; };
 }
 const logQueue = serialQueue();
+
+// v1.97 (M2): et Map, der også gemmes i storage.session, så det overlever, at baggrundsscriptet stopper efter ca. 30 sekunders
+// ro (før gik lærte parameter-rettelser, puljens hvil, token-skønnet og »sidst svarende model« tabt ved hver genstart).
+// Det gemte læses ind ved opstart; de poster, der er sat i mellemtiden, vinder. Ryddes, når browseren lukkes.
+class StoredMap extends Map {
+  constructor(name) {
+    super();
+    this.name = name;
+    this.ready = chrome.storage.session.get(name).then(r => { for (const [k, v] of Object.entries(r[name] || {})) if (!super.has(k)) super.set(k, v); }).catch(() => {});
+  }
+  save() { this.ready.then(() => chrome.storage.session.set({ [this.name]: Object.fromEntries(this) })).catch(() => {}); }
+  set(k, v) { super.set(k, v); this.save(); return this; }
+  delete(k) { const r = super.delete(k); this.save(); return r; }
+  clear() { super.clear(); this.save(); }
+}
 function logText(args) {
-  return args.map(a => a instanceof Error ? a.message : typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })())
-    .join(" ").replace(/^\[UnbaitDK\]\s*/, "");
+  return args.map(a => a instanceof Error ? a.message : typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ");
 }
 // v1.74: navnet på den udbyder og model, der gav advarslen/fejlen (vises i loggen under ADVARSEL/FEJL)
 const logModel = (s) => s && PROVIDER_NAMES[s.provider] ? PROVIDER_NAMES[s.provider] + " · " + modelNameFor(s) : "";
 function ulog(level, ...args) { ulogM(level, "", ...args); }
+// v1.97 (L3): præfikset »[UnbaitDK]« sættes her (kun i konsollen) – ikke i hvert kald
 function ulogM(level, model, ...args) {
-  (level === "error" ? console.error : level === "warn" ? console.warn : console.log)(...args);
+  (level === "error" ? console.error : level === "warn" ? console.warn : console.log)("[UnbaitDK]", ...args);
   const entry = { t: Date.now(), level, msg: logText(args) };
   if (model) entry.model = model;
   logQueue(async () => {
@@ -65,33 +50,11 @@ function ulogM(level, model, ...args) {
   }).catch(() => {});
 }
 
-// OpenRouter (v1.51): de modeller, brugeren har valgt (id fra openrouter.ai, navn som brugeren skrev det).
-// Gratis-modellerne (:free) og Free Models Router deler OpenRouters grænse for gratis kald.
-const OPENROUTER_MODELS = [
-  { id: "openrouter/free", name: "Free Models Router" },
-  { id: "google/gemma-4-31b-it:free", name: "Google Gemma 4 31B (free)" },
-  // v1.62: Nemotron 3 Super (free) fjernet (0 % oppetid hos NVIDIA siden 23. okt.); Lightning, Mistral og Flint tilføjet
-  { id: "nvidia/nemotron-3.5-lightning:free", name: "Nemotron 3.5 Lightning (free)" },
-  // Betalt model: OpenRouters grænse for gratis kald gælder ikke, og forbruget tælles for sig med prisen (PRICES)
-  { id: "mistralai/mistral-small-24b-instruct-2501", name: "Mistral Small 3 (paid)", paid: true }
-  // v1.63: Flint (free) fjernet – tænkende model, der brugte alle 2000 tokens på tænkning (tomme svar)
-];
+// Modellisterne (OpenRouter v1.51, OpenAI v1.58, Groq v1.69) står i PROVIDERS; listens første er standardvalget,
+// og et ukendt eller fjernet id giver standardvalget
+const OPENROUTER_MODELS = PROVIDERS.openrouter.models, OPENAI_MODELS = PROVIDERS.openai.models, GROQ_MODELS = PROVIDERS.groq.models;
 const openrouterModel = (id) => OPENROUTER_MODELS.find(m => m.id === id) || OPENROUTER_MODELS[0];
-// OpenAI (v1.58): modellen vælges i en ekstra liste; GPT-6 Luna er standard
-const OPENAI_MODELS = [
-  { id: "gpt-6-luna", name: "GPT-6 Luna" },
-  { id: "gpt-5.4", name: "GPT-5.4" },
-  { id: "gpt-5.4-mini", name: "GPT-5.4 mini" },
-  { id: "gpt-5.4-nano", name: "GPT-5.4 nano" }
-];
 const openaiModel = (id) => OPENAI_MODELS.find(m => m.id === id) || OPENAI_MODELS[0];
-// Groq (v1.69): modellen vælges i listen "Model"; GPT-OSS 120B er standard. Hver model har sine egne gratis-grænser
-// hos Groq (brugerens side Settings → Limits 27. okt.), så hver model får sin egen tæller (groqTier).
-const GROQ_MODELS = [
-  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B" },
-  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B" },
-  { id: "qwen/qwen3.8-27b", name: "Qwen3.8 27B" }
-];
 const groqModel = (id) => GROQ_MODELS.find(m => m.id === id) || GROQ_MODELS[0];
 // Udbydere med modelliste: den valgte model (ukendt/fjernet -> standardvalget)
 const pickModel = (provider, id) => provider === "openrouter" ? openrouterModel(id) : provider === "openai" ? openaiModel(id)
@@ -146,14 +109,14 @@ function poolEntries() {
 // LanguageModel bruges direkte i baggrunden; findes det ikke dér, bruges et
 // skjult extension-dokument (offscreen), hvor det er tilgængeligt.
 // =====================================================================
-let localBase = null, localBasePrompt = null;
 const localQueue = serialQueue();   // én lokal forespørgsel ad gangen
 
 // Chromes modeltjeneste kan kortvarigt svare "unavailable" lige efter opstart – prøv én gang til
+const LOCAL_RETRY_MS = 1500;
 async function localAvailability() {
   const r = await localAvailabilityOnce();
   if (r.state !== "unavailable") return r;
-  await new Promise(res => setTimeout(res, 1500));
+  await new Promise(res => setTimeout(res, LOCAL_RETRY_MS));
   return localAvailabilityOnce();
 }
 // Dansk er ikke understøttet endnu: Chrome svarer "unavailable" (eller fejler) -> prøv uden sprogangivelse (shared.js)
@@ -163,24 +126,7 @@ async function localAvailabilityOnce() {
   return { state, danish };
 }
 
-async function localPromptDirect(system, user, signal, retried = false) {
-  if (!localBase || localBasePrompt !== system) {
-    localBase?.destroy?.();
-    localBase = null;
-    const r = await createLocalSession(system);
-    localBase = r.session;
-    if (!localBase && !retried) {
-      // Måske var modeltjenesten bare ikke klar endnu – prøv én gang til efter et øjeblik
-      await new Promise(res => setTimeout(res, 1500));
-      return localPromptDirect(system, user, signal, true);
-    }
-    if (!localBase) throw r.lastErr || new Error("Chromes indbyggede AI er ikke tilgængelig");
-    localBasePrompt = system;
-  }
-  const s = await localBase.clone({ signal });   // ny samtale for hver overskrift
-  try { return await s.prompt(user, { signal }); }
-  finally { s.destroy?.(); }
-}
+const localPromptDirect = localSessionCache();   // v1.97: basissessionen pr. systemprompt står i shared.js (også local-ai.js)
 
 let lastLocalMs = 0;   // svartid for seneste lokale kald (uden ventetid i køen) (v1.24)
 function localPrompt(system, user, signal) {
@@ -208,16 +154,15 @@ async function viaOffscreen(msg) {
 // =====================================================================
 // Indstillinger
 // - Udbyder, prompt og tænd/sluk ligger i storage.sync (følger Chrome-kontoen).
-// - API-nøgler ligger KUN i storage.local (synkroniseres ikke), og lageret er
-//   begrænset til extensionens egne sider og baggrundsscriptet (fund 05).
+// - API-nøgler ligger KUN i storage.local (synkroniseres ikke). storage.local kan fra Chromes side kun læses af
+//   extensionens egne sider og baggrundsscriptet (standardniveauet TRUSTED_CONTEXTS), ikke af indholdsscriptet (fund 05).
 // =====================================================================
-try { chrome.storage.local.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" }); } catch {}
 
 async function getSettings() {
   const s = await chrome.storage.sync.get({ provider: "openai", prompt: DEFAULT_PROMPT, enabled: true,
     maxWordsFirst: MAX_WORDS_FIRST, maxWordsRetry: MAX_WORDS_RETRY, openrouterModel: "", openaiModel: "", groqModel: "", pool: [] });
   const { apiKeys = {} } = await chrome.storage.local.get("apiKeys");
-  if (!FIXED_MODELS[s.provider]) s.provider = "openai"; // ukendt udbyder (fx fra en ændret sikkerhedskopi) -> standardvalget
+  if (!isProvider(s.provider)) s.provider = "openai"; // ukendt udbyder (fx fra en ændret sikkerhedskopi) -> standardvalget
   s.prompt = s.prompt || DEFAULT_PROMPT;
   s.apiKey = apiKeys[s.provider] || "";
   s.keys = apiKeys;   // v1.70: puljens modeller bruger deres egne nøgler
@@ -254,9 +199,8 @@ function normalizeUrl(url) {
   if (!url) return "";
   try {
     const u = new URL(url);
-    const keep = ENTRY_PARAMS.map(([k, re]) => [k, u.searchParams.get(k)]).filter(([k, v], i) => v && ENTRY_PARAMS[i][1].test(v));
-    return (u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/+$/, "")).toLowerCase() +
-      (keep.length ? "?" + keep.map(([k, v]) => k + "=" + v).join("&") : "");
+    const keep = ENTRY_PARAMS.map(([k, re]) => [k, u.searchParams.get(k), re]).filter(([, v, re]) => v && re.test(v));
+    return pagePath(u) + (keep.length ? "?" + keep.map(([k, v]) => k + "=" + v).join("&") : "");
   } catch { return ""; }
 }
 
@@ -294,7 +238,7 @@ async function writeCache(key, value, excerptHash) {
     await chrome.storage.local.set({ [key]: entry });
   } catch (e) {
     // Lageret er fuldt: ryd op og prøv igen – en fejl her må aldrig stoppe omskrivningen
-    ulog("warn", "[UnbaitDK] Kunne ikke gemme i cachen – rydder op:", e);
+    ulog("warn", "Kunne ikke gemme i cachen – rydder op:", e);
     await cleanCache(true);
     try { await chrome.storage.local.set({ [key]: entry }); } catch {}
   }
@@ -315,7 +259,7 @@ async function cleanCache(aggressive = false) {
   }
   if (remove.length) await chrome.storage.local.remove(remove);
   await chrome.storage.local.set({ lastCacheClean: now });
-  if (remove.length) ulog("info", "[UnbaitDK] Cache ryddet:", remove.length, "fjernet");
+  if (remove.length) ulog("info", "Cache ryddet:", remove.length, "fjernet");
 }
 
 // Tøm alle gemte omskrivninger (knap i indstillingerne). Nøgler og indstillinger bevares.
@@ -332,42 +276,11 @@ async function maybeCleanCache() {
 }
 
 // =====================================================================
-// Gratis Gemini: lokale, justerbare forbrugsgrænser (fund 09)
-// Standard 15/minut, 500/dag og 250.000 tokens/minut (som Googles gratis-niveau for
-// Gemini 3.5 Flash Lite; indtil v1.24 var tokengrænsen pr. dag). Det er UnbaitDK's egne
-// grænser – Googles faktiske grænser afhænger af projektet. Alle tælleropdateringer
-// køres én ad gangen, forventet forbrug reserveres, og minuttællingen gemmes, så
-// den overlever genstart af baggrundsscriptet.
+// Gratis-grænser (fund 09): unbAIt DK's egne, justerbare grænser pr. tæller. Grænserne og deres lagernøgler står i
+// PROVIDERS[p].tier (shared.js). Alle tælleropdateringer køres én ad gangen, forventet forbrug reserveres, og
+// minuttællingen gemmes, så den overlever genstart af baggrundsscriptet.
 // =====================================================================
-const DEFAULT_FREE_LIMITS = { rpm: 15, rpd: 500, tpm: 250000 };
-
-// Udbydere med UnbaitDK's egne gratis-grænser (v1.27: også Groq – 30/minut, 1.000/dag, 8.000 tokens/minut)
-function utcDay() { return new Date().toISOString().slice(0, 10); }
-function pacificDay() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
-}
-const KILO_HOUR_MSG = (n) => `Timens Kilo-grænse er nået (${n} forespørgsler)`;
-const GROQ_TOK_MSG = "Dagens tokens hos Groq er brugt – skift model eller vent til i morgen";   // brugerens tekst (v1.69)
-const FREE_TIERS = {
-  gemini_free: { limitsKey: "freeLimits", usageKey: "freeUsage", defaults: DEFAULT_FREE_LIMITS, day: pacificDay,
-    dayMsg: (n) => `Dagens gratis Gemini-grænse er nået (${n} forespørgsler) – nulstilles ca. kl. 9` },
-  // v1.69: også 200.000 tokens/dag (tpd) – den grænse rammer først. Gælder GPT-OSS 120B; de andre Groq-modeller nedenfor
-  groq: { limitsKey: "groqLimits", usageKey: "groqUsage", defaults: { rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 }, day: utcDay,
-    dayMsg: (n) => `Dagens Groq-grænse er nået (${n} forespørgsler)`, tokMsg: GROQ_TOK_MSG },
-  // Amazon Nova 2 Lite (v1.38): 20 kald/minut og 500/dag ifølge nova.amazon.com. Der er ingen grænse for
-  // tokens pr. minut (ingen tpm) – så tjekkes kun antal kald.
-  nova_free: { limitsKey: "novaLimits", usageKey: "novaUsage", defaults: { rpm: 20, rpd: 500 }, day: utcDay,
-    dayMsg: (n) => `Dagens Nova-grænse er nået (${n} forespørgsler)` },
-  // OpenRouter (v1.51): gratis modeller har 20 kald/minut og 50/dag (1.000/dag med mindst 10 USD i kredit)
-  // ifølge openrouter.ai/docs/api-reference/limits – fælles for alle gratis modeller. Ingen tokengrænse.
-  openrouter: { limitsKey: "openrouterLimits", usageKey: "openrouterUsage", defaults: { rpm: 20, rpd: 50 }, day: utcDay,
-    dayMsg: (n) => `Dagens OpenRouter-grænse er nået (${n} forespørgsler)` },
-  // v1.87 (genskabt i v1.89): Kilo Code har kun en grænse pr. time, hver variant med sin egen tæller.
-  // Målt: ca. 100 kald i timen uden nøgle og ca. 280–300 med nøgle. Ingen grænse pr. minut eller dag.
-  kilo: { limitsKey: "kiloLimits", usageKey: "kiloUsage", defaults: { rph: 90 }, day: utcDay, hourMsg: KILO_HOUR_MSG },
-  kilo_key: { limitsKey: "kiloKeyLimits", usageKey: "kiloKeyUsage", defaults: { rph: 250 }, day: utcDay, hourMsg: KILO_HOUR_MSG }
-};
-
+const FREE_TIERS = Object.fromEntries(Object.entries(PROVIDERS).filter(([, P]) => P.tier).map(([p, P]) => [p, P.tier]));
 // v1.69: de øvrige Groq-modeller har hver sin tæller og sine egne grænser (samme tal som 120B hos Groq)
 for (const m of GROQ_MODELS.slice(1)) FREE_TIERS["groq:" + m.id] = { ...FREE_TIERS.groq, limitsKey: "groqLimits:" + m.id, usageKey: "groqUsage:" + m.id };
 // Tælleren for en udbyder + model (null = ingen gratis-grænser). Betalte OpenRouter-modeller er ikke omfattet (v1.62)
@@ -385,30 +298,35 @@ async function getFreeLimits(tier = "gemini_free") {
 
 // v1.69: skønnet over et kalds tokens (til minut- og dagsgrænsen) bygger hos Groq på de seneste kalds faktiske forbrug
 // (tokens pr. tegn i prompt + besked, uden tokens fra cache) + 15 %. Før første kald: tegn ÷ 3 + 300 som før.
-const tokPerChar = new Map();   // tier -> glidende gennemsnit
+const TOK_MARGIN = 1.15, TOK_SMOOTHING = 0.3;   // 15 % oveni skønnet; nyt kald vægter 30 % i det glidende gennemsnit
+const TOK_FALLBACK = (chars) => Math.ceil(chars / 3) + 300;   // før første kald (og hos de andre udbydere): tegn ÷ 3 + 300
+const tokPerChar = new StoredMap("tokPerChar");   // tier -> glidende gennemsnit (v1.97: gemt i storage.session)
 function estimateTokens(tier, chars) {
   const r = tier && tier.startsWith("groq") ? tokPerChar.get(tier) : null;
-  return r ? Math.ceil(chars * r * 1.15) : Math.ceil(chars / 3) + 300;
+  return r ? Math.ceil(chars * r * TOK_MARGIN) : TOK_FALLBACK(chars);
 }
 function learnTokens(tier, chars, used) {
   if (!tier || !tier.startsWith("groq") || !(used > 0) || !(chars > 0)) return;
   const x = used / chars, old = tokPerChar.get(tier);
-  tokPerChar.set(tier, old ? old * 0.7 + x * 0.3 : x);
+  tokPerChar.set(tier, old ? old * (1 - TOK_SMOOTHING) + x * TOK_SMOOTHING : x);
 }
 
 const withUsageLock = serialQueue();
 
+// Minutvinduet er 61 s (lidt mere end udbydernes, så en stram tæller hos dem aldrig rammes), timevinduet 60 min.;
+// GATE_SLACK_MS lægges til ventetiden, så kaldet ikke sendes præcis på grænsen
+const MINUTE_WINDOW_MS = 61000, HOUR_WINDOW_MS = 3600000, GATE_SLACK_MS = 50;
 async function readUsage(tier = "gemini_free") {
   const T = FREE_TIERS[tier];
   const stored = (await chrome.storage.local.get(T.usageKey))[T.usageKey];
   const day = T.day();
   // Ny dag nulstiller dagstællerne, men minutvinduet fortsætter hen over midnat
   const u = stored && stored.day === day ? { ...stored } : { day, requests: 0, tokens: 0 };
-  u.minute = (stored?.minute || []).filter(t => Date.now() - t < 61000);
+  u.minute = (stored?.minute || []).filter(t => Date.now() - t < MINUTE_WINDOW_MS);
   // Tokens i det seneste minut: [{ t: tidspunkt, n: tokens }] (v1.25)
-  u.minuteTok = (stored?.minuteTok || []).filter(e => Date.now() - e.t < 61000);
+  u.minuteTok = (stored?.minuteTok || []).filter(e => Date.now() - e.t < MINUTE_WINDOW_MS);
   // v1.87: tidspunkterne for kaldene i den seneste time (Kilo Code)
-  u.hour = (stored?.hour || []).filter(t => Date.now() - t < 3600000);
+  u.hour = (stored?.hour || []).filter(t => Date.now() - t < HOUR_WINDOW_MS);
   return u;
 }
 
@@ -445,7 +363,7 @@ function setKiloPause(tier) {
     const until = Date.now() + KILO_PAUSE_MS;
     p[tier] = until;
     await chrome.storage.local.set({ kiloPause: p });
-    ulog("warn", "[UnbaitDK] Kilo Code:", MODEL_NAMES[tier], "gav HTTP 429 – pause til kl.", clockDK(until));
+    ulog("warn", "Kilo Code:", MODEL_NAMES[tier], "gav HTTP 429 – pause til kl.", clockDK(until));
     return until;
   });
 }
@@ -463,10 +381,10 @@ function gateOnce(estimatedTokens, tier = "gemini_free") {
     if (L.rph && u.hour.length >= L.rph) return { full: new Error(FREE_TIERS[tier].hourMsg(L.rph)) };
     // v1.69: tokens pr. dag (Groq). Tokens fra Groqs cache tæller ikke med (rettes efter hvert kald)
     if (L.tpd && u.tokens + estimatedTokens > L.tpd) return { full: new Error(FREE_TIERS[tier].tokMsg || "Dagens tokens er brugt") };
-    if (L.rpm && u.minute.length >= L.rpm) return { wait: 61000 - (Date.now() - Math.min(...u.minute)) + 50 };
+    if (L.rpm && u.minute.length >= L.rpm) return { wait: MINUTE_WINDOW_MS - (Date.now() - Math.min(...u.minute)) + GATE_SLACK_MS };
     // Tokens pr. minut: vent, til der er plads (et enkelt kald må altid komme igennem i et tomt minut)
     const tokMinute = u.minuteTok.reduce((a, e) => a + e.n, 0);
-    if (L.tpm && u.minuteTok.length && tokMinute + estimatedTokens > L.tpm) return { wait: 61000 - (Date.now() - Math.min(...u.minuteTok.map(e => e.t))) + 50 };
+    if (L.tpm && u.minuteTok.length && tokMinute + estimatedTokens > L.tpm) return { wait: MINUTE_WINDOW_MS - (Date.now() - Math.min(...u.minuteTok.map(e => e.t))) + GATE_SLACK_MS };
     let now = Date.now();
     while (u.minuteTok.some(e => e.t === now)) now++;   // unikt tidsstempel til rettelsen bagefter
     u.minute.push(now);
@@ -489,12 +407,18 @@ async function freeTierGate(estimatedTokens, signal, tier = "gemini_free") {
   }
 }
 
+// v1.97 (M2): Chrome stopper baggrundsscriptet efter ca. 30 sekunder uden kald til et Chrome-API. En lang ventetid på plads i
+// minutvinduet (op til 61 s) har ingen, så der kaldes et billigt API hvert 20. sekund, mens der ventes – ellers kunne scriptet
+// dø midt i ventetiden, og fanen måtte vente på sin egen tidsgrænse (90 s) og prøve igen
+const KEEP_ALIVE_MS = 20000;
 function sleep(ms, signal) {
   // v1.90 (audit F-03): et signal, der allerede er afbrudt, afviser straks, og lytteren fjernes igen ved normal afslutning
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error("aborted: slukket")); return; }
-    const onAbort = () => { clearTimeout(t); reject(new Error("aborted: slukket")); };
-    const t = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, ms);
+    const ping = ms > KEEP_ALIVE_MS ? setInterval(() => { try { chrome.runtime.getPlatformInfo().catch(() => {}); } catch {} }, KEEP_ALIVE_MS) : null;
+    const done = () => { clearInterval(ping); signal?.removeEventListener("abort", onAbort); };
+    const onAbort = () => { clearTimeout(t); done(); reject(new Error("aborted: slukket")); };
+    const t = setTimeout(() => { done(); resolve(); }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -520,20 +444,13 @@ function usageFrom(provider, data) {
   return { input: n(u.prompt_tokens), cached, output: n(u.completion_tokens) };
 }
 
-// ---- Anslået pris (v1.29): USD pr. million tokens. Gratis udbydere har ingen pris. ----
-// Kilder: udbydernes prislister via tredjepartssider, 20. okt. 2026 (se overdragelsesnoten).
-const PRICES = {
-  openai: { in: 0.10, cache: 0.01, out: 0.50 },
-  // v1.58: OpenAIs listepriser 26. okt. 2026 (developers.openai.com); gratis forbrug ved deling med OpenAI regnes ikke fra
-  "openai:gpt-5.4": { in: 2.50, cache: 0.25, out: 15.00 },
-  "openai:gpt-5.4-mini": { in: 0.75, cache: 0.075, out: 4.50 },
-  "openai:gpt-5.4-nano": { in: 0.20, cache: 0.02, out: 1.25 },
-  // v1.62: OpenRouters pris 26. okt. 2026 for Mistral Small 3 (ingen cache-rabat oplyst)
-  "openrouter:mistralai/mistral-small-24b-instruct-2501": { in: 0.05, cache: 0.05, out: 0.08 },
-  anthropic: { in: 0.10, cacheWrite: 0.125, cache: 0.01, out: 0.50 },
-  gemini: { in: 0.75, cache: 0.075, out: 3.75 },
-  deepseek: { in: 0.15, cache: 0.003, out: 0.60 }    // dobbelt pris i DeepSeeks dyre tidsrum
-};
+// ---- Anslået pris (v1.29): USD pr. million tokens pr. forbrugstæller (statsKey). Gratis udbydere har ingen pris. ----
+// Priserne står i PROVIDERS (udbyderens prices, eller modellens i en modelliste)
+const PRICES = {};
+for (const [p, P] of Object.entries(PROVIDERS)) {
+  if (P.prices) PRICES[p] = P.prices;
+  for (const m of P.models || []) if (m.prices) PRICES[statsKey(p, m.id)] = m.prices;
+}
 // DeepSeeks dyre tidsrum: isDeepseekPeak i shared.js
 function costOf(provider, usage, when = new Date()) {
   const P = PRICES[provider];
@@ -560,7 +477,7 @@ function recordUsage(provider, usage) {
     s.ok = s.ok || 0;
     tokenStats[provider] = s;
     await chrome.storage.local.set({ tokenStats });
-  }).catch(e => console.warn("[UnbaitDK] Kunne ikke gemme forbrug:", e));
+  }).catch(e => console.warn("Kunne ikke gemme forbrug:", e));
 }
 
 // En godkendt omskrivning fra AI'en (ikke fra UnbaitDK's cache) (v1.29)
@@ -571,7 +488,7 @@ function recordApproved(provider) {
     if (!s) return;
     s.ok = (s.ok || 0) + 1;
     await chrome.storage.local.set({ tokenStats });
-  }).catch(e => console.warn("[UnbaitDK] Kunne ikke gemme forbrug:", e));
+  }).catch(e => console.warn("Kunne ikke gemme forbrug:", e));
 }
 
 function getTokenStats(provider) {
@@ -593,7 +510,7 @@ function resetTokenStats(provider) {
 // =====================================================================
 // Automatisk tilpasning til modeller, der ikke understøtter alle parametre
 // =====================================================================
-const paramFixes = new Map(); // "udbyder|model" -> liste af rettelser
+const paramFixes = new StoredMap("paramFixes"); // "udbyder|model" -> liste af rettelser (v1.97: gemt i storage.session)
 
 function findFix(body, raw) {
   let msg = raw, param = "";
@@ -643,48 +560,9 @@ function geminiBlock(data) {
   return fr && GEMINI_BLOCK_FINISH.test(fr) ? fr : "";
 }
 
-// OpenAI-kompatible udbydere (v1.94: samlet her): adressen og felterne ud over model og beskeder, i den rækkefølge de sendes
-const OPENAI_COMPATIBLE = {
-  // Ingen tænkning: hurtigere og billigere. Accepterer modellen ikke "none", bruges "low".
-  openai: { url: "https://api.openai.com/v1/chat/completions",
-    body: () => ({ max_completion_tokens: 2000, reasoning_effort: "none", temperature: 0.3 }) },
-  // Groq: GPT-OSS kan ikke slå tænkningen helt fra – "low" er det mindste, og tænkningen sendes ikke med tilbage
-  // (include_reasoning: false) (v1.27). v1.69: Qwen kan slå tænkningen helt fra (reasoning_effort "none" ifølge Groqs
-  // dokumentation); include_reasoning sendes ikke
-  groq: { url: "https://api.groq.com/openai/v1/chat/completions",
-    body: (model) => /^qwen\//.test(model) ? { max_completion_tokens: 2000, reasoning_effort: "none", temperature: 0.3 }
-      : { max_completion_tokens: 2000, reasoning_effort: "low", include_reasoning: false, temperature: 0.3 } },
-  // Amazons egen Nova-API (v1.38). Nova 2 Lite tænker kun, hvis reasoning_effort sendes – det gør vi ikke.
-  nova_free: { url: "https://api.nova.amazon.com/v1/chat/completions", body: () => ({ max_tokens: 300, temperature: 0.3 }) },
-  // OpenRouter (v1.51): tænkning slås fra (reasoning.effort "none"), hvor modellen tillader det
-  openrouter: { url: "https://openrouter.ai/api/v1/chat/completions", body: () => ({ max_tokens: 300, temperature: 0.3, reasoning: { effort: "none" } }) },
-  // Kilo Code (v1.84, kilo.ai/docs/gateway): gratis modeller kan bruges uden nøgle; kilo_key er brugerens Kilo-konto (v1.85).
-  // Auto Free kan vælge en tænkende model, så der er plads til tænkningen (v1.86: max_tokens 4000); den fjernes fra svaret.
-  kilo: { url: "https://ai-gateway.kilo.ai/api/v1/chat/completions", body: () => ({ max_tokens: 4000, temperature: 0.3 }) },
-  kilo_key: { url: "https://ai-gateway.kilo.ai/api/v1/chat/completions", body: () => ({ max_tokens: 4000, temperature: 0.3 }) },
-  // DeepSeek: tænkning slås fra – hurtigere og billigere
-  deepseek: { url: "https://api.deepseek.com/chat/completions", body: () => ({ thinking: { type: "disabled" }, max_tokens: 300, temperature: 0.3 }) }
-};
+// OpenAI-kompatible udbydere (v1.94): adressen og felterne ud over model og beskeder, fra PROVIDERS (url + body)
+const OPENAI_COMPATIBLE = Object.fromEntries(Object.entries(PROVIDERS).filter(([, P]) => P.url).map(([p, P]) => [p, { url: P.url, body: P.body }]));
 const isGemini = (p) => p === "gemini" || p === "gemini_free";
-
-// fetch + læsning af HELE svaret under samme tidsgrænse (fund 10)
-async function fetchText(url, opts, ms, outerSignal) {
-  const ctrl = new AbortController();
-  const onAbort = () => ctrl.abort();
-  outerSignal?.addEventListener("abort", onAbort, { once: true });
-  const timer = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const res = await fetch(url, { ...opts, signal: ctrl.signal });
-    const raw = await res.text();
-    return { res, raw };
-  } catch (e) {
-    if (outerSignal?.aborted) throw new Error("aborted: slukket");
-    throw e;
-  } finally {
-    clearTimeout(timer);
-    outerSignal?.removeEventListener("abort", onAbort);
-  }
-}
 
 // feedback: kun i andet forsøg – fortæller AI'en, hvorfor det forrige svar blev afvist
 // label: mærkatet på forsidekortet (fx "chok-sag"), sendes med under overskriften (v1.19)
@@ -693,7 +571,7 @@ async function fetchText(url, opts, ms, outerSignal) {
 // Beskeden til AI'en (v1.70: udtrukket, så puljen kan skønne tokens, før modellen er valgt)
 function buildUserMsg(text, context, feedback, label, urlText) {
   // Meget korte overskrifter ("Stopper!") er også overskrifter – og har mest brug for uddraget
-  const short = text.split(/\s+/).filter(Boolean).length <= 3;
+  const short = wordCount(text) <= 3;
   const note = short && context ? "\n\n(Overskriften er meget kort og fortæller ikke, hvad historien handler om. Brug uddraget til at skrive en overskrift, der gør det.)" : "";
   const urlLine = urlText ? "Teksten i artiklens adresse (uden æ, ø og å): " + urlText : "";
   return "Overskrift: " + text + (label ? "\nMærkat på forsiden: " + label : "") + note + (context
@@ -703,37 +581,99 @@ function buildUserMsg(text, context, feedback, label, urlText) {
 }
 
 // Kilo Auto og OpenRouters Free Models Router vælger selv modellen. Loggen viser, hvilken model der svarede –
-// første gang og hver gang den skifter (v1.91; før v1.91 én linje pr. kald). Huskes kun, mens baggrunden kører.
-const lastAnswerModel = new Map();
+// første gang og hver gang den skifter (v1.91; før v1.91 én linje pr. kald).
+const lastAnswerModel = new StoredMap("lastAnswerModel");   // v1.97: gemt i storage.session
 function logAnswerModel(key, who, chosen, answered) {
   const m = answered || "(ukendt model)", prev = lastAnswerModel.get(key);
   if (prev === m) return;
   lastAnswerModel.set(key, m);
-  ulog("info", "[UnbaitDK] " + who, chosen, "→ svar fra", m + (prev ? " (skiftet model)" : ""));
+  ulog("info", who, chosen, "→ svar fra", m + (prev ? " (skiftet model)" : ""));
 }
 
-// pre (v1.70): { tier, reserved, stamp } – puljen har allerede reserveret plads hos denne model til første kald
-// rawOpt (v1.91, »Få forslag til prompten«): { system, user, maxTokens } – egen systembesked og besked, mere plads til svaret,
-// og hele svaret returneres (ikke kun første linje som en overskrift)
-async function callAI(text, settings, context = "", signal, feedback = "", label = "", urlText = "", pre = null, rawOpt = null) {
-  const prompt = rawOpt ? rawOpt.system : settings.prompt;
-  const userMsg = rawOpt ? rawOpt.user : buildUserMsg(text, context, feedback, label, urlText);
-  const key = settings.apiKey;
-  if (!FIXED_MODELS[settings.provider]) throw new Error("Ukendt udbyder: " + settings.provider);
+// =====================================================================
+// Et AI-kald (v1.97: delt op). callAI bygger kaldet (buildRequest), sender det med plads i gratis-grænsen og
+// tilpasning ved HTTP 400 (sendWithFixes), læser svaret (answerText) og prøver én gang mere ved et tomt svar.
+// Parametre (ét objekt):
+//   text, context, label, urlText   overskriften, uddraget, mærkatet på forsidekortet (v1.19) og teksten fra artiklens
+//                                   adresse (v1.20/v1.30) – se buildUserMsg
+//   settings                        øjebliksbilledet fra getSettings (eller puljens variant med anden udbyder og nøgle)
+//   signal                          afbrydelse (sluk, annullering)
+//   feedback                        kun i andet forsøg – fortæller AI'en, hvorfor det forrige svar blev afvist
+//   pre (v1.70)                     { tier, reserved, stamp } – puljen har allerede reserveret plads til første kald
+//   raw (v1.91, »Få forslag til prompten«)   { system, user, maxTokens } – egen systembesked og besked, mere plads til
+//                                   svaret, og hele svaret returneres (ikke kun første linje som en overskrift)
+// Giver { text, truncated }.
+// =====================================================================
+// AI_TIMEOUT_MS (30 s, tidsgrænsen for selve kaldet, fund 10) står i shared.js sammen med fanens tidsgrænser
+const FIX_ATTEMPTS = 4;        // højst så mange tilpasninger af kaldet efter HTTP 400
+async function callAI({ text = "", settings, context = "", signal, feedback = "", label = "", urlText = "", pre = null, raw = null }) {
+  const prompt = raw ? raw.system : settings.prompt;
+  const userMsg = raw ? raw.user : buildUserMsg(text, context, feedback, label, urlText);
+  if (!isProvider(settings.provider)) throw new Error("Ukendt udbyder: " + settings.provider);
   const model = pickModel(settings.provider, settings.model)?.id || FIXED_MODELS[settings.provider];
   if (settings.provider === "chrome_local") {
-    if (rawOpt) throw new Error("Chromes indbyggede AI kan ikke bruges til forslag til prompten");
-    const out = String(await localPrompt(prompt, userMsg, signal) || "").trim();
-    if (!out) throw new Error("Tomt svar fra Chromes indbyggede AI");
-    recordUsage("chrome_local", { input: 0, output: 0, ms: lastLocalMs, retry: !!feedback }); // lokalt: kun antal kald og svartid
-    return { text: cleanHeadline(out.split("\n")[0]), truncated: false };
+    if (raw) throw new Error("Chromes indbyggede AI kan ikke bruges til forslag til prompten");
+    return callLocalAI(prompt, userMsg, signal, !!feedback);
   }
-  if (!key && NEEDS_KEY(settings.provider)) throw new Error("Ingen API-nøgle");
+  if (!settings.apiKey && NEEDS_KEY(settings.provider)) throw new Error("Ingen API-nøgle");
 
+  const kilo = isKiloTier(settings.provider);
+  const ctx = { ...buildRequest(settings, model, prompt, userMsg, raw), settings, model, signal, pre,
+    tier: tierFor(settings.provider, model),   // betalte OpenRouter-modeller har ingen (v1.62); hver Groq-model sin egen (v1.69)
+    chars: prompt.length + userMsg.length,
+    adaptKey: settings.provider + "|" + model,   // v1.94: rettelser huskes pr. udbyder + model (Gemini har intet model-felt i kaldet)
+    // Free Models Router (v1.52) vælger en ny model ved hvert kald: en rettelse gælder kun det ene kald og huskes ikke
+    router: settings.provider === "openrouter" && model === "openrouter/free" };
+  const baseBody = JSON.stringify(ctx.body);
+  (paramFixes.get(ctx.adaptKey) || []).forEach(fix => applyFix(ctx.body, fix));
+
+  let data, rewritten, rawText;
+  for (let emptyTry = 0; ; emptyTry++) {
+    let ms;
+    ({ raw: rawText, ms } = await sendWithFixes(ctx));
+    // v1.97 (L5): et 200-svar, der ikke er JSON (fx HTML fra en proxy), giver en læsbar fejl i stedet for »Unexpected token <«
+    try { data = JSON.parse(rawText); } catch { throw new Error("Svaret fra udbyderen er ikke JSON: " + rawText.slice(0, 200)); }
+    // Free Models Router og Kilo Auto vælger selv modellen: svaret fortæller hvilken (v1.51, v1.84/v1.85)
+    if (settings.provider === "openrouter") logAnswerModel(settings.provider + "|" + model, "OpenRouter:", openrouterModel(model).name, data.model);
+    if (kilo) logAnswerModel(settings.provider, "Kilo Code:", MODEL_NAMES[settings.provider], data.model);
+    recordUsage(statsKey(settings.provider, model), { ...usageFrom(settings.provider, data), ms, retry: !!feedback });   // feedback = andet forsøg
+    rewritten = answerText(settings.provider, data, kilo);
+    // Tomt svar, fordi tænkningen brugte hele pladsen (Free Models Router, v1.52), eller fordi tænkningen står i "reasoning"
+    // og intet i "content" (Kilo Code, v1.86, uanset finish_reason): prøves én gang mere, forfra med tænkning slået fra
+    const fr = data.choices?.[0]?.finish_reason || "?";
+    const thoughtOut = (ctx.router && !rewritten && fr === "length") || (kilo && !rewritten);
+    if (!thoughtOut) break;
+    if (emptyTry >= 1) throw thoughtOutError(kilo, data, fr);
+    if (kilo) ulog("info", "Kilo Code:", data.model || "(ukendt model)", "gav tomt svar (finish_reason: " + fr + ") – prøver igen");
+    else ulog("info", "OpenRouter:", data.model || "(ukendt model)", "brugte hele pladsen på at tænke – prøver igen");
+    ctx.body = JSON.parse(baseBody);
+  }
+  if (!rewritten && isGemini(settings.provider)) {
+    const why = geminiBlock(data);
+    if (why) { const e = new Error("Gemini blokerede overskriften (" + why + ")"); e.blocked = why; throw e; }
+  }
+  if (!rewritten) throw new Error("Tomt svar fra AI. Rå svar: " + rawText.slice(0, 500));
+  const truncated = data.stop_reason === "max_tokens" ||
+    data.choices?.[0]?.finish_reason === "length" ||
+    data.candidates?.[0]?.finishReason === "MAX_TOKENS";
+  return { text: raw ? String(rewritten).trim() : cleanHeadline(rewritten), truncated };
+}
+
+// Chromes indbyggede AI: lokalt, kun antal kald og svartid tælles
+async function callLocalAI(prompt, userMsg, signal, retry) {
+  const out = String(await localPrompt(prompt, userMsg, signal) || "").trim();
+  if (!out) throw new Error("Tomt svar fra Chromes indbyggede AI");
+  recordUsage("chrome_local", { input: 0, output: 0, ms: lastLocalMs, retry });
+  return { text: cleanHeadline(out.split("\n")[0]), truncated: false };
+}
+
+// Adressen, headerne og kroppen for et kald: OpenAI-kompatible udbydere ud fra PROVIDERS (url + body), Anthropic og Gemini
+// hver sin form. raw (v1.91): mere plads til et længere svar
+function buildRequest(settings, model, prompt, userMsg, raw) {
+  const key = settings.apiKey;
   let url, body, headers = { "Content-Type": "application/json" };
   const chat = OPENAI_COMPATIBLE[settings.provider];
   if (chat) {
-    // OpenAI-kompatible API'er (v1.94: én opbygning til alle): systemprompt + besked og udbyderens egne felter
     url = chat.url;
     if (NEEDS_KEY(settings.provider)) headers["Authorization"] = "Bearer " + key;   // Kilo uden nøgle sender ingen
     body = { model, messages: [{ role: "system", content: prompt }, { role: "user", content: userMsg }], ...chat.body(model) };
@@ -752,107 +692,79 @@ async function callAI(text, settings, context = "", signal, feedback = "", label
     // blev ellers blokeret. PROHIBITED_CONTENT og OTHER kan ikke slås fra – dem håndterer geminiBlock().
     body = { contents: [{ parts: [{ text: prompt + "\n\n" + userMsg }] }], safetySettings: GEMINI_SAFETY };
   }
-
-  if (rawOpt) {   // v1.91: mere plads til et længere svar
-    if (isGemini(settings.provider)) body.generationConfig = { maxOutputTokens: rawOpt.maxTokens };
-    else for (const k of ["max_tokens", "max_completion_tokens"]) if (k in body) body[k] = Math.max(body[k], rawOpt.maxTokens);
+  if (raw) {
+    if (isGemini(settings.provider)) body.generationConfig = { maxOutputTokens: raw.maxTokens };
+    else for (const k of ["max_tokens", "max_completion_tokens"]) if (k in body) body[k] = Math.max(body[k], raw.maxTokens);
   }
-  const adaptKey = settings.provider + "|" + model;   // v1.94: modellen (Gemini har intet model-felt i kaldet)
-  // Free Models Router (v1.52) vælger en ny model ved hvert kald: en rettelse gælder kun det ene kald og huskes
-  // ikke, og et tomt svar, fordi tænkningen brugte hele pladsen, prøves én gang mere (så vælges en anden model)
-  const router = settings.provider === "openrouter" && model === "openrouter/free";
-  const kilo = isKiloTier(settings.provider);
-  const baseBody = JSON.stringify(body);
-  (paramFixes.get(adaptKey) || []).forEach(fix => applyFix(body, fix));
+  return { url, headers, body };
+}
 
-  let res, raw, ms = 0, data, rewritten;
-  for (let emptyTry = 0; ; emptyTry++) {
+// Sender kaldet, til det lykkes eller fejler endeligt: plads i gratis-grænsen reserveres (eller puljens reservation bruges),
+// reservationen rettes til det faktiske forbrug, og en afvist parameter (HTTP 400) tilpasses og huskes. Giver { raw, ms }.
+async function sendWithFixes(ctx) {
   for (let attempt = 0; ; attempt++) {
-    let reserved = 0, stamp = 0;
-    // Betalte OpenRouter-modeller er ikke omfattet af grænsen for gratis kald (v1.62); hver Groq-model har sin tæller (v1.69)
-    const tier = tierFor(settings.provider, model);
-    const chars = prompt.length + userMsg.length;
-    if (tier) {
-      if (pre && pre.tier === tier) { reserved = pre.reserved; stamp = pre.stamp; }   // v1.70: reserveret af puljen
-      else {
-        reserved = estimateTokens(tier, chars);
-        stamp = await freeTierGate(reserved, signal, tier);
-      }
-      pre = null;
-    }
-    if (signal?.aborted) throw new Error("aborted: slukket");
+    const { reserved, stamp } = await reserveSlot(ctx);
+    if (ctx.signal?.aborted) throw new Error("aborted: slukket");
     const t0 = Date.now();
-    ({ res, raw } = await fetchText(url, { method: "POST", headers, body: JSON.stringify(body) }, 30000, signal));
-    ms = Date.now() - t0;   // svartid for selve kaldet (ikke ventetid i kø eller minutgrænse) (v1.24)
-    if (tier) {
-      // Ret reservationen til det faktiske forbrug (udbyderen oplyser det i svaret).
-      // Groq tæller ikke tokens fra cache med i sin minutgrænse.
-      let used = reserved;
-      try {
-        const d = JSON.parse(raw);
-        if (tier === "gemini_free") used = d.usageMetadata?.totalTokenCount ?? reserved;
-        else if (d.usage) used = Math.max(0, (Number(d.usage.total_tokens) || 0) - (Number(d.usage.prompt_tokens_details?.cached_tokens) || 0)) || reserved;
-      } catch {}
-      if (used !== reserved) await adjustFreeTokens(used - reserved, stamp, tier);
-      if (res.ok) learnTokens(tier, chars, used);
-    }
-    // OpenRouter (v1.53) kan sende en fejl inde i et svar med status 200 ({"error": {"code": 400, …}}, intet "choices"):
-    // den behandles som en fejl med fejlens egen kode, så kaldet kan tilpasses og prøves igen
-    let status = res.status;
-    if (res.ok && settings.provider === "openrouter") {
-      try { const d = JSON.parse(raw); if (d.error && !d.choices?.length) status = Number(d.error.code) || 500; } catch {}
-    }
-    if (res.ok && status === res.status) break;
+    const { res, raw } = await fetchWithTimeout(ctx.url, { method: "POST", headers: ctx.headers, body: JSON.stringify(ctx.body) }, AI_TIMEOUT_MS, ctx.signal);
+    const ms = Date.now() - t0;   // svartid for selve kaldet (ikke ventetid i kø eller minutgrænse) (v1.24)
+    if (ctx.tier) await settleReservation(ctx, raw, reserved, stamp, res.ok);
+    const status = responseStatus(ctx.settings.provider, res, raw);
+    if (res.ok && status === res.status) return { raw, ms };
     // v1.90: Kilos 429 sætter varianten på pause (se KILO_PAUSE_MS). Fejlen kastes som før, så puljen straks tager reserven;
     // uden reserve stopper næste forsøg ved pausen i gateOnce uden at sende noget
-    if (status === 429 && isKiloTier(tier)) await setKiloPause(tier);
-    const fix = status === 400 && attempt < 4 ? findFix(body, raw) : null;
+    if (status === 429 && isKiloTier(ctx.tier)) await setKiloPause(ctx.tier);
+    const fix = status === 400 && attempt < FIX_ATTEMPTS ? findFix(ctx.body, raw) : null;
     if (!fix) throw new Error(`HTTP ${status}: ${raw.slice(0, 300)}`);
-    applyFix(body, fix);
-    if (!router) paramFixes.set(adaptKey, [...(paramFixes.get(adaptKey) || []), fix]);
-    ulog("info", "[UnbaitDK] Model", body.model, "– tilpasser kald:", fix, router ? "(kun dette kald)" : "");
+    applyFix(ctx.body, fix);
+    if (!ctx.router) paramFixes.set(ctx.adaptKey, [...(paramFixes.get(ctx.adaptKey) || []), fix]);
+    ulog("info", "Model", ctx.body.model, "– tilpasser kald:", fix, ctx.router ? "(kun dette kald)" : "");
   }
-  data = JSON.parse(raw);
-  // Free Models Router vælger selv modellen: svaret fortæller hvilken (v1.51)
-  // v1.91 (brugerens valg »mulighed 1«): kun første gang en model svarer, og når den skifter – ikke én linje pr. kald
-  if (settings.provider === "openrouter") logAnswerModel(settings.provider + "|" + model, "OpenRouter:", openrouterModel(model).name, data.model);
-  if (kilo) logAnswerModel(settings.provider, "Kilo Code:", MODEL_NAMES[settings.provider], data.model);   // v1.84/v1.85
-  recordUsage(statsKey(settings.provider, model), { ...usageFrom(settings.provider, data), ms, retry: !!feedback });   // feedback = andet forsøg
-
-  if (settings.provider === "anthropic") {
+}
+// Plads til ét kald: puljens reservation (pre, kun første gang), ellers ventes der på plads i minutvinduet
+async function reserveSlot(ctx) {
+  if (!ctx.tier) return { reserved: 0, stamp: 0 };
+  const pre = ctx.pre; ctx.pre = null;
+  if (pre && pre.tier === ctx.tier) return { reserved: pre.reserved, stamp: pre.stamp };
+  const reserved = estimateTokens(ctx.tier, ctx.chars);
+  return { reserved, stamp: await freeTierGate(reserved, ctx.signal, ctx.tier) };
+}
+// Reservationen rettes til det faktiske forbrug (udbyderen oplyser det i svaret). Groq tæller ikke tokens fra cache med i sin minutgrænse.
+async function settleReservation(ctx, raw, reserved, stamp, ok) {
+  let used = reserved;
+  try {
+    const d = JSON.parse(raw);
+    if (ctx.tier === "gemini_free") used = d.usageMetadata?.totalTokenCount ?? reserved;
+    else if (d.usage) used = Math.max(0, (Number(d.usage.total_tokens) || 0) - (Number(d.usage.prompt_tokens_details?.cached_tokens) || 0)) || reserved;
+  } catch {}
+  if (used !== reserved) await adjustFreeTokens(used - reserved, stamp, ctx.tier);
+  if (ok) learnTokens(ctx.tier, ctx.chars, used);
+}
+// OpenRouter (v1.53) kan sende en fejl inde i et svar med status 200 ({"error": {"code": 400, …}}, intet "choices"):
+// den behandles som en fejl med fejlens egen kode, så kaldet kan tilpasses og prøves igen
+function responseStatus(provider, res, raw) {
+  if (res.ok && provider === "openrouter") {
+    try { const d = JSON.parse(raw); if (d.error && !d.choices?.length) return Number(d.error.code) || 500; } catch {}
+  }
+  return res.status;
+}
+// Svarets tekst pr. udbyderform. v1.84: tænkning, der står i selve svaret (<think>…</think>), fjernes ved Kilo Code
+function answerText(provider, data, kilo) {
+  if (provider === "anthropic") {
     const textBlock = data.content?.find(c => c.type === "text" || c.text);
-    rewritten = textBlock?.text || data.content?.[0]?.text;
-  } else if (isGemini(settings.provider)) {
-    rewritten = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || "").join("").trim();
-  } else {
-    rewritten = data.choices?.[0]?.message?.content;
-    // v1.84: tænkning, der står i selve svaret (<think>…</think>), fjernes ved Kilo Code
-    if (kilo && rewritten) rewritten = String(rewritten).replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    return textBlock?.text || data.content?.[0]?.text;
   }
-  // Free Models Router: tomt svar, fordi tænkningen brugte hele pladsen (v1.52)
-  // v1.86: Kilo Code – tomt svar (tænkningen står i "reasoning", intet i "content") prøves én gang mere, uanset finish_reason
-  const fr = data.choices?.[0]?.finish_reason || "?";
-  const thoughtOut = (router && !rewritten && fr === "length") || (kilo && !rewritten);
-  if (!thoughtOut) break;
-  const who = kilo ? "Kilo Code" : "OpenRouter";
-  if (emptyTry >= 1) {
-    const e = new Error(kilo ? "Kilo Code: " + (data.model || "modellen") + " gav tomt svar (finish_reason: " + fr + ")"
-      : "OpenRouter: " + (data.model || "modellen") + " brugte hele pladsen på at tænke");
-    e.thoughtOut = data.model || "?"; e.thoughtWho = who; e.finishReason = kilo ? fr : ""; throw e;
-  }
-  if (kilo) ulog("info", "[UnbaitDK] Kilo Code:", data.model || "(ukendt model)", "gav tomt svar (finish_reason: " + fr + ") – prøver igen");
-  else ulog("info", "[UnbaitDK] OpenRouter:", data.model || "(ukendt model)", "brugte hele pladsen på at tænke – prøver igen");
-  body = JSON.parse(baseBody);   // forfra: tænkning slået fra igen
-  }
-  if (!rewritten && isGemini(settings.provider)) {
-    const why = geminiBlock(data);
-    if (why) { const e = new Error("Gemini blokerede overskriften (" + why + ")"); e.blocked = why; throw e; }
-  }
-  if (!rewritten) throw new Error("Tomt svar fra AI. Rå svar: " + raw.slice(0, 500));
-  const truncated = data.stop_reason === "max_tokens" ||
-    data.choices?.[0]?.finish_reason === "length" ||
-    data.candidates?.[0]?.finishReason === "MAX_TOKENS";
-  return { text: rawOpt ? String(rewritten).trim() : cleanHeadline(rewritten), truncated };
+  if (isGemini(provider)) return (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || "").join("").trim();
+  let t = data.choices?.[0]?.message?.content;
+  if (kilo && t) t = String(t).replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  return t;
+}
+// To tomme svar i træk: ikke en fejl for brugeren (rewriteError lader originalen stå)
+function thoughtOutError(kilo, data, fr) {
+  const e = new Error(kilo ? "Kilo Code: " + (data.model || "modellen") + " gav tomt svar (finish_reason: " + fr + ")"
+    : "OpenRouter: " + (data.model || "modellen") + " brugte hele pladsen på at tænke");
+  e.thoughtOut = data.model || "?"; e.thoughtWho = kilo ? "Kilo Code" : "OpenRouter"; e.finishReason = kilo ? fr : "";
+  return e;
 }
 
 // v1.68: er AI'ens svar det samme som originalen? Store og små bogstaver, mellemrum, anførselstegn og
@@ -871,6 +783,9 @@ function cleanHeadline(t) {
 // MAX_WORDS_FIRST og MAX_WORDS_RETRY står i shared.js
 // Uddrag under så mange tegn regnes som korte: så sendes adressens tekst også med (v1.30)
 const SHORT_EXCERPT = 400;
+// Tegngrænsen følger ordgrænsen (CHARS_PER_WORD tegn pr. ord) – dog mindst MAX_LEN_FACTOR × originalens længde –
+// så en lang, men tilladt overskrift ikke afvises på antal tegn
+const CHARS_PER_WORD = 9, MAX_LEN_FACTOR = 1.8;
 // v1.91 (audit A-04): kommentarkontrollen afgøres KUN af konkrete formuleringer, hvor AI'en taler om opgaven.
 // Et emneord (»overskriften«, »uddraget«, »teksten«, »du« …) er ikke i sig selv en kommentar – det kan være en
 // almindelig nyhed, fx »Avis retter overskriften efter kritik fra minister«. Formuleringerne gælder altid,
@@ -908,9 +823,8 @@ function rejectReason(original, out, truncated, maxWords = MAX_WORDS_FIRST) {
   if (!out) return "tomt";
   if (/[\r\n]/.test(out)) return "linjer";
   if (/[?!]/.test(out)) return "tegn";
-  if (out.split(/\s+/).filter(Boolean).length > maxWords) return "lang";
-  // Tegngrænsen følger ordgrænsen (9 tegn pr. ord), så en lang, men tilladt overskrift ikke afvises på antal tegn
-  if (out.length > Math.max(maxWords * 9, original.length * 1.8)) return "lang";
+  if (wordCount(out) > maxWords) return "lang";
+  if (out.length > Math.max(maxWords * CHARS_PER_WORD, original.length * MAX_LEN_FACTOR)) return "lang";
   if (isAIComment(out, original)) return "kommentar";
   return "";
 }
@@ -919,7 +833,7 @@ function rejectReason(original, out, truncated, maxWords = MAX_WORDS_FIRST) {
 // »Live:« foran tæller ikke med (som ved selve omskrivningen)
 function cachedTooLong(original, cachedText, settings) {
   if (!cachedText || cachedText === SKIP) return false;
-  const orig = String(original).replace(/^\s*live\s*:\s*/i, ""), out = String(cachedText).replace(/^\s*live\b\s*:?\s*/i, "");
+  const orig = stripLive(original), out = stripLive(cachedText);
   return rejectReason(orig, out, false, settings.maxWordsRetry || MAX_WORDS_RETRY) === "lang";
 }
 
@@ -938,7 +852,7 @@ async function readUsableCache(key, text, settings) {
 // Svar fra en sikkerhedsmodel bag OpenRouters Free Models Router (v1.54)
 const ROUTER_SAFETY = /^\s*User Safety\s*:/i;
 function retryFeedback(reason, out) {
-  const words = String(out || "").split(/\s+/).filter(Boolean).length;
+  const words = wordCount(out);
   const why = {
     linjer: "det fyldte flere linjer. Svar kun med én linje: selve overskriften",
     tegn: "det indeholdt spørgsmålstegn eller udråbstegn. Skriv et udsagn uden dem",
@@ -956,7 +870,7 @@ function retryFeedback(reason, out) {
 // brugerens liste (prioriteret rækkefølge) i stedet for at vente. Kun hvis den valgte model har gratis-grænser og
 // listen har modeller med nøgle; ellers som før. Cache og forbrug følger den model, der svarede.
 // =====================================================================
-const poolCool = new Map();            // modellens id -> tidspunkt, den må bruges igen (efter 429/5xx fra udbyderen)
+const poolCool = new StoredMap("poolCool");   // modellens id -> tidspunkt, den må bruges igen (efter 429/5xx fra udbyderen); v1.97: gemt i storage.session
 const POOL_COOL_MS = 60000;
 const POOL_COOL_RE = /HTTP (429|500|502|503|504|529)|overloaded|RESOURCE_EXHAUSTED/i;
 function poolCandidates(settings) {
@@ -1047,23 +961,30 @@ function takeEarlyCancel(jobId) {
   return jobId != null && earlyCancels.delete(jobId);
 }
 
+// =====================================================================
+// Omskrivning af én overskrift (v1.97: delt op). rewriteHeadline tjekker indstillinger, »Behold originalen« og cachen og
+// deler samtidige forespørgsler; runRewrite laver selve omskrivningen (rewriteAttempts: op til to kald gennem puljen,
+// callPooled) og gemmer resultatet; rewriteError oversætter en fejl til svaret til fanen.
 // force (v1.91, »Prøv igen« / »Omskriv alligevel«): den gemte omskrivning springes over, og der laves altid et nyt
 // AI-kald – også selv om samme overskrift er i gang andre steder. Svaret erstatter cacheposten.
+// =====================================================================
+// v1.67: liveblogs – »Live:« foran originalen fjernes, før AI'en får overskriften, og sættes foran svaret igen
+const LIVE_PREFIX = /^\s*live\s*:\s*/i;
+const stripLive = (t) => String(t).replace(/^\s*live\b\s*:?\s*/i, "");
+
 async function rewriteHeadline({ text, article, context, label = "", urlText = "", jobId, force = false }) {
-  maybeCleanCache();
+  maybeCleanCache().catch(() => {});
   const settings = await getSettings(); // fast øjebliksbillede for hele opgaven (fund 07)
   if (!settings.enabled) return { error: "UnbaitDK er slukket" };
   if (!settings.apiKey && NEEDS_KEY(settings.provider)) return { error: "Ingen API-nøgle sat" };
+  if (!force && await isKept(article, text)) return { kept: true };   // v1.91: »Behold originalen«
 
-  const sig = await settingsSignature(settings);
-  const key = await cacheKeyFor(article, text, sig);
+  const key = await cacheKeyFor(article, text, await settingsSignature(settings));
   const excerptHash = await sha((context || "") + (label ? "\n#" + label : ""));
-
   // Cache: samme artikel, overskrift og indstillinger – og samme uddrag
   // Et nyt svar (under 2 timer) bruges, selv om uddraget afviger lidt: EB's artikelsider ændrer
   // sig fra hentning til hentning (fx tidspunkter), og det må ikke koste et nyt kald.
   // Først når posten er ældre end 2 timer, afgør uddraget, om artiklen er ændret.
-  if (!force && await isKept(article, text)) return { kept: true };   // v1.91: »Behold originalen«
   const cached = force ? null : await readUsableCache(key, text, settings);
   const fresh = cached && Date.now() - cached.t <= REVALIDATE_AFTER;
   if (cached && (fresh || cached.x === excerptHash)) {
@@ -1072,12 +993,6 @@ async function rewriteHeadline({ text, article, context, label = "", urlText = "
     if (cached.v === SKIP) return { skip: true, cached: true };
     return { rewritten: cached.v, cached: true };
   }
-
-  // v1.67: liveblogs – »Live:« foran originalen fjernes, før AI'en får overskriften, og sættes foran svaret igen
-  const liveMatch = /^\s*live\s*:\s*/i.exec(text);
-  const aiText = liveMatch ? text.slice(liveMatch[0].length) : text;
-  const withLive = (t) => liveMatch ? "Live: " + t.replace(/^\s*live\b\s*:?\s*/i, "") : t;
-
   // v1.64: blev opgaven annulleret, mens indstillinger og cache blev læst, startes intet kald
   if (takeEarlyCancel(jobId)) return { cancelled: true };
 
@@ -1089,94 +1004,107 @@ async function rewriteHeadline({ text, article, context, label = "", urlText = "
   if (!flight) {
     const ctrl = new AbortController();
     flight = { ctrl, waiters: new Set() };
-    flight.promise = (async () => {
-      let used = settings;   // v1.70: den model (valgt eller fra puljen), der svarede sidst
-      // v1.94: loglinje om overskriften med udbyder/model og artiklens adresse på næste linje
-      const logHeadline = (level, ...msg) => ulogM(level, logModel(used), ...msg, "\n   Adresse:", article || "(intet link)");
-      // Afvisningen huskes i 1 dag – men ikke ved »Prøv igen« (force), som beholder den gamle omskrivning (v1.91)
-      const skipRemembered = async () => { if (!force) await writeCache(key, SKIP, excerptHash); return { skip: true }; };
-      try {
-        // Et afvist svar prøves én gang mere med det samme – AI'en svarer ikke ens hver gang
-        // Andet forsøg får at vide, hvorfor det første blev afvist
-        let rewritten = "", truncated = false, feedback = "";
-        // Adressens tekst sendes med, når der intet uddrag er, eller uddraget er kort (v1.30)
-        const useUrl = urlText && (!context || context.length < SHORT_EXCERPT) ? urlText : "";
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          ({ text: rewritten, truncated } = await enqueue(async (signal) => {
-            const both = AbortSignal.any ? AbortSignal.any([signal, ctrl.signal]) : signal;
-            const chars = settings.prompt.length + buildUserMsg(aiText, context, feedback, label, useUrl).length;
-            const tg = await chooseTarget(settings, chars, both);
-            used = tg.settings;
-            try { return await callAI(aiText, tg.settings, context, both, feedback, label, useUrl, tg.pre); }
-            catch (e) {
-              // Udbyderen er overbelastet eller har sagt stop: modellen hviler et minut, og næste forsøg tager den næste i puljen
-              // v1.90: ikke Kilo – den har sin egen pause på 15 minutter (gateOnce), og minuttet her ville kun forsinke beskeden
-              if (tg.id && POOL_COOL_RE.test(e.message || "") && !isKiloTier(tierFor(tg.settings.provider, tg.settings.model))) {
-                poolCool.set(tg.id, Date.now() + POOL_COOL_MS);
-                ulog("info", "[UnbaitDK] Puljen: " + (poolEntries().find(x => x.id === tg.id)?.name || tg.id) + " hviler et minut efter fejl");
-              }
-              throw e;
-            }
-          }));
-          if (liveMatch) rewritten = rewritten.replace(/^\s*live\b\s*:?\s*/i, "");   // ordet tæller ikke med i ordgrænsen
-          let reason = rejectReason(aiText, rewritten, truncated, attempt === 1 ? settings.maxWordsFirst : settings.maxWordsRetry);
-          // Free Models Router (v1.54) kan vælge en sikkerhedsmodel, der svarer "User Safety: safe" – det er ikke en overskrift
-          if (!reason && used.provider === "openrouter" && used.model === "openrouter/free" && ROUTER_SAFETY.test(rewritten)) reason = "sikkerhed";
-          if (!reason) break;
-          // Viser også, om der var et uddrag (v1.20), og artiklens adresse (v1.30)
-          const info = context ? `[uddrag: ${context.length} tegn${useUrl ? " + adressens tekst" : ""}]`
-            : useUrl ? "[intet uddrag – adressens tekst brugt]" : "[intet uddrag]";
-          logHeadline("warn", `[UnbaitDK] Afviste AI-svar (forsøg ${attempt}) ${info} for`, text, "→", rewritten);
-          // Sikkerhedssvaret kom fra en anden model end den næste, så der sendes ingen besked om det med (v1.54)
-          feedback = reason === "sikkerhed" ? "" : retryFeedback(reason, rewritten);
-          rewritten = "";
-        }
-        if (!rewritten) {
-          // Uden uddrag kan afvisningen skyldes, at artiklen ikke blev hentet i tide.
-          // Så huskes afvisningen ikke, og overskriften prøves igen ved næste indlæsning.
-          return context ? skipRemembered() : { skip: true };
-        }
-        // v1.68: et svar, der er identisk med originalen, vises ikke (intet AI-ikon) og huskes i 1 dag
-        if (sameHeadline(aiText, rewritten)) {
-          const info = context ? `[uddrag: ${context.length} tegn]` : "[intet uddrag]";
-          logHeadline("warn", `[UnbaitDK] Uændret svar ${info} for`, text);
-          return skipRemembered();
-        }
-        rewritten = withLive(rewritten);
-        await writeCache(key, rewritten, excerptHash); // gemmes under opgavens egen nøgle
-        recordApproved(statsKey(used.provider, used.model));
-        return { rewritten };
-      } catch (err) {
-        const msg = err.message || String(err);
-        if (/slukket/.test(msg)) return { error: "UnbaitDK er slukket" };
-        // Gemini blokerede overskriften (v1.46): ikke en fejl – originalen bliver stående som ved et afvist svar,
-        // og blokeringen huskes i 1 dag, så overskriften ikke sendes igen ved hver indlæsning
-        if (err.blocked) {
-          logHeadline("warn", `[UnbaitDK] Gemini blokerede (${err.blocked}):`, text);
-          return skipRemembered();
-        }
-        // Free Models Router: to tomme svar, fordi tænkningen brugte pladsen (v1.52) – ikke en fejl; originalen
-        // bliver stående og huskes ikke, så overskriften prøves igen ved næste indlæsning (routeren vælger frit)
-        if (err.thoughtOut) {
-          logHeadline("warn", `[UnbaitDK] ${err.thoughtWho || "OpenRouter"} gav tomt svar to gange (sidst ${err.thoughtOut}${err.finishReason ? ", finish_reason: " + err.finishReason : ""}):`, text);
-          return { skip: true };
-        }
-        ulogM("error", logModel(used), "[UnbaitDK] AI error:", err);
-        // v1.63: OpenRouters udbyder (fx Google bag Gemma) afviser, fordi den er overbelastet – ikke en kvote hos brugeren
-        if (used.provider === "openrouter" && /HTTP 429/.test(msg) && /upstream|Provider returned error/i.test(msg))
-          return { error: "Modellen er overbelastet hos udbyderen – prøv en anden model eller senere" };
-        if (/429|RESOURCE_EXHAUSTED|quota/.test(msg)) return { error: "Kvote overskredet – vent et minut og prøv igen" };
-        return { error: msg };
-      } finally {
-        // Kun sin egen post – et nyere kald med samme nøgle må ikke fjernes (v1.64)
-        if (inFlight.get(flightKey) === flight) inFlight.delete(flightKey);
-      }
-    })();
+    flight.promise = runRewrite({ text, article, context, label, urlText, settings, key, excerptHash, force, ctrl })
+      .finally(() => { if (inFlight.get(flightKey) === flight) inFlight.delete(flightKey); });   // kun sin egen post (v1.64)
     inFlight.set(flightKey, flight);
   }
   if (jobId) { flight.waiters.add(jobId); jobToFlight.set(jobId, flight); }
   try { return await flight.promise; }
   finally { if (jobId) { flight.waiters.delete(jobId); jobToFlight.delete(jobId); } }
+}
+
+// Selve omskrivningen: kaldene, kvalitetstjekket, cachen og loggen. Giver svaret til fanen.
+async function runRewrite(job) {
+  const { text, article, context, settings, key, excerptHash, force } = job;
+  const liveMatch = LIVE_PREFIX.exec(text);
+  const aiText = liveMatch ? text.slice(liveMatch[0].length) : text;
+  const st = { used: settings };   // v1.70: den model (valgt eller fra puljen), der svarede sidst
+  // v1.94: loglinje om overskriften med udbyder/model og artiklens adresse på næste linje
+  const logHeadline = (level, ...msg) => ulogM(level, logModel(st.used), ...msg, "\n   Adresse:", article || "(intet link)");
+  // Afvisningen huskes i 1 dag – men ikke ved »Prøv igen« (force), som beholder den gamle omskrivning (v1.91)
+  const skipRemembered = async () => { if (!force) await writeCache(key, SKIP, excerptHash); return { skip: true }; };
+  try {
+    const rewritten = await rewriteAttempts({ ...job, aiText, liveMatch, st, logHeadline });
+    // Uden uddrag kan afvisningen skyldes, at artiklen ikke blev hentet i tide.
+    // Så huskes afvisningen ikke, og overskriften prøves igen ved næste indlæsning.
+    if (!rewritten) return context ? skipRemembered() : { skip: true };
+    // v1.68: et svar, der er identisk med originalen, vises ikke (intet AI-ikon) og huskes i 1 dag
+    if (sameHeadline(aiText, rewritten)) {
+      logHeadline("warn", `Uændret svar ${context ? `[uddrag: ${context.length} tegn]` : "[intet uddrag]"} for`, text);
+      return skipRemembered();
+    }
+    const out = liveMatch ? "Live: " + stripLive(rewritten) : rewritten;
+    await writeCache(key, out, excerptHash); // gemmes under opgavens egen nøgle
+    recordApproved(statsKey(st.used.provider, st.used.model));
+    return { rewritten: out };
+  } catch (err) {
+    return rewriteError(err, st.used, text, logHeadline, skipRemembered);
+  }
+}
+
+// Op til to AI-kald: et afvist svar prøves én gang mere med det samme – AI'en svarer ikke ens hver gang – og andet
+// forsøg får at vide, hvorfor det første blev afvist. Giver den godkendte overskrift (uden »Live:«) eller "".
+async function rewriteAttempts({ text, aiText, context, label, urlText, settings, ctrl, liveMatch, st, logHeadline }) {
+  // Adressens tekst sendes med, når der intet uddrag er, eller uddraget er kort (v1.30)
+  const useUrl = urlText && (!context || context.length < SHORT_EXCERPT) ? urlText : "";
+  let feedback = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    let { text: rewritten, truncated } = await enqueue((signal) => callPooled({ aiText, context, label, useUrl, feedback, settings, signal, ctrl, st }));
+    if (liveMatch) rewritten = stripLive(rewritten);   // ordet tæller ikke med i ordgrænsen
+    let reason = rejectReason(aiText, rewritten, truncated, attempt === 1 ? settings.maxWordsFirst : settings.maxWordsRetry);
+    // Free Models Router (v1.54) kan vælge en sikkerhedsmodel, der svarer "User Safety: safe" – det er ikke en overskrift
+    if (!reason && st.used.provider === "openrouter" && st.used.model === "openrouter/free" && ROUTER_SAFETY.test(rewritten)) reason = "sikkerhed";
+    if (!reason) return rewritten;
+    // Viser også, om der var et uddrag (v1.20), og artiklens adresse (v1.30)
+    const info = context ? `[uddrag: ${context.length} tegn${useUrl ? " + adressens tekst" : ""}]`
+      : useUrl ? "[intet uddrag – adressens tekst brugt]" : "[intet uddrag]";
+    logHeadline("warn", `Afviste AI-svar (forsøg ${attempt}) ${info} for`, text, "→", rewritten);
+    // Sikkerhedssvaret kom fra en anden model end den næste, så der sendes ingen besked om det med (v1.54)
+    feedback = reason === "sikkerhed" ? "" : retryFeedback(reason, rewritten);
+  }
+  return "";
+}
+
+// Ét kald gennem puljen (v1.70): den valgte model, eller den første ledige i brugerens liste. st.used = den model, der blev brugt
+async function callPooled({ aiText, context, label, useUrl, feedback, settings, signal, ctrl, st }) {
+  const both = AbortSignal.any ? AbortSignal.any([signal, ctrl.signal]) : signal;
+  const chars = settings.prompt.length + buildUserMsg(aiText, context, feedback, label, useUrl).length;
+  const tg = await chooseTarget(settings, chars, both);
+  st.used = tg.settings;
+  try { return await callAI({ text: aiText, settings: tg.settings, context, signal: both, feedback, label, urlText: useUrl, pre: tg.pre }); }
+  catch (e) {
+    // Udbyderen er overbelastet eller har sagt stop: modellen hviler et minut, og næste forsøg tager den næste i puljen
+    // v1.90: ikke Kilo – den har sin egen pause på 15 minutter (gateOnce), og minuttet her ville kun forsinke beskeden
+    if (tg.id && POOL_COOL_RE.test(e.message || "") && !isKiloTier(tierFor(tg.settings.provider, tg.settings.model))) {
+      poolCool.set(tg.id, Date.now() + POOL_COOL_MS);
+      ulog("info", "Puljen: " + (poolEntries().find(x => x.id === tg.id)?.name || tg.id) + " hviler et minut efter fejl");
+    }
+    throw e;
+  }
+}
+
+// En fejl under omskrivningen -> svaret til fanen (originalen bliver stående)
+function rewriteError(err, used, text, logHeadline, skipRemembered) {
+  const msg = err.message || String(err);
+  if (/slukket/.test(msg)) return { error: "UnbaitDK er slukket" };
+  // Gemini blokerede overskriften (v1.46): ikke en fejl – originalen bliver stående som ved et afvist svar,
+  // og blokeringen huskes i 1 dag, så overskriften ikke sendes igen ved hver indlæsning
+  if (err.blocked) {
+    logHeadline("warn", `Gemini blokerede (${err.blocked}):`, text);
+    return skipRemembered();
+  }
+  // Free Models Router: to tomme svar, fordi tænkningen brugte pladsen (v1.52) – ikke en fejl; originalen
+  // bliver stående og huskes ikke, så overskriften prøves igen ved næste indlæsning (routeren vælger frit)
+  if (err.thoughtOut) {
+    logHeadline("warn", `${err.thoughtWho || "OpenRouter"} gav tomt svar to gange (sidst ${err.thoughtOut}${err.finishReason ? ", finish_reason: " + err.finishReason : ""}):`, text);
+    return { skip: true };
+  }
+  ulogM("error", logModel(used), "AI error:", err);
+  // v1.63: OpenRouters udbyder (fx Google bag Gemma) afviser, fordi den er overbelastet – ikke en kvote hos brugeren
+  if (used.provider === "openrouter" && /HTTP 429/.test(msg) && /upstream|Provider returned error/i.test(msg))
+    return { error: "Modellen er overbelastet hos udbyderen – prøv en anden model eller senere" };
+  if (/429|RESOURCE_EXHAUSTED|quota/.test(msg)) return { error: "Kvote overskredet – vent et minut og prøv igen" };
+  return { error: msg };
 }
 
 function cancelJob(jobId) {
@@ -1222,15 +1150,16 @@ async function fetchArticle(url) {
   try {
     const u = new URL(url), site = siteForHost(u.hostname);
     if (!site?.builtin && site?.id !== "jfm" && !ARTICLE_EXTRA_HOSTS.test(u.hostname)) return { html: "" };
-    const { res, raw } = await fetchText(u.href, { credentials: "include" }, 6000);
+    const { res, raw } = await fetchWithTimeout(u.href, { credentials: "include" }, ARTICLE_TIMEOUT_MS);
     // v1.67: adressen efter en evt. omdirigering, så indholdsscriptet kan godkende den rigtige artikel
-    return { html: res.ok ? raw.slice(0, 800000) : "", finalUrl: res.redirected ? res.url : "" };
+    return { html: res.ok ? raw.slice(0, ARTICLE_MAX_CHARS) : "", finalUrl: res.redirected ? res.url : "" };
   } catch {
     return { html: "" };
   }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || typeof msg.action !== "string") return false;   // v1.97 (L5): en besked uden handling ignoreres
   const reply = (p) => { p.then(sendResponse, e => sendResponse({ error: e.message || String(e) })); return true; };
   // Indholdsscripts må kun bruge disse handlinger; resten kun fra extensionens egne sider
   const fromExtensionPage = sender.url && sender.url.startsWith(chrome.runtime.getURL(""));
@@ -1250,8 +1179,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "modelInfo":
       // v1.69: alle tællere (også én pr. Groq-model) med deres lagernøgle (tierKeys)
       return reply(Promise.all(Object.keys(FREE_TIERS).map(t => getFreeLimits(t))).then((all) =>
-        ({ models: FIXED_MODELS,
-           tierLimits: Object.fromEntries(Object.keys(FREE_TIERS).map((t, i) => [t, all[i]])), modelGroups: modelGroups(), poolEntries: poolEntries(),
+        ({ tierLimits: Object.fromEntries(Object.keys(FREE_TIERS).map((t, i) => [t, all[i]])), modelGroups: modelGroups(), poolEntries: poolEntries(),
            tierKeys: Object.fromEntries(Object.entries(FREE_TIERS).map(([k, t]) => [k, t.limitsKey])),
            tierDefaults: Object.fromEntries(Object.entries(FREE_TIERS).map(([k, t]) => [k, t.defaults])) })));
     case "freeUsage": return reply(getFreeUsage(FREE_TIERS[msg.tier] ? msg.tier : "gemini_free"));
@@ -1261,8 +1189,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "suggestPrompt": return reply(suggestPrompt(msg));   // v1.91
     case "updateInfo": return reply(checkUpdate(!!msg.force).then(i => ({ ...i, current: chrome.runtime.getManifest().version_name })));   // v1.92
     case "testAI":
-      return reply(callAI("Chok: Mand finder guld i haven", msg.settings || {},
-        "En 54-årig mand fra Vejle fandt i weekenden en guldmønt fra 1600-tallet, da han gravede i sin have. Mønten er afleveret til Nationalmuseet.")
+      return reply(callAI({ text: "Chok: Mand finder guld i haven", settings: msg.settings || {},
+        context: "En 54-årig mand fra Vejle fandt i weekenden en guldmønt fra 1600-tallet, da han gravede i sin have. Mønten er afleveret til Nationalmuseet." })
         .then(r => ({ rewritten: r.text })));
   }
   return false;
@@ -1443,8 +1371,7 @@ async function suggestPrompt({ prompt, maxWordsFirst, maxWordsRetry }) {
   if (settings.provider === "chrome_local") return { error: "Chromes indbyggede AI kan ikke bruges til forslag til prompten" };
   if (!settings.apiKey && NEEDS_KEY(settings.provider)) return { error: "Ingen API-nøgle" };
   const first = Number(maxWordsFirst) || settings.maxWordsFirst, retry = Number(maxWordsRetry) || settings.maxWordsRetry;
-  const r = await callAI("", settings, "", undefined, "", "", "", null,
-    { system: SUGGEST_SYSTEM, user: suggestUserMsg(String(prompt || settings.prompt), first, retry), maxTokens: 4000 });
+  const r = await callAI({ settings, raw: { system: SUGGEST_SYSTEM, user: suggestUserMsg(String(prompt || settings.prompt), first, retry), maxTokens: 4000 } });
   return { ...parseSuggestion(r.text), model: modelNameFor(settings), first, retry };
 }
 
@@ -1457,15 +1384,16 @@ async function suggestPrompt({ prompt, maxWordsFirst, maxWordsRetry }) {
 // =====================================================================
 const UPDATE_URL = "https://raw.githubusercontent.com/lytken-de/unbait-releases/main/latest.json";
 const UPDATE_EVERY = 24 * 60 * 60 * 1000;
-const UPDATE_ZIP = /^https:\/\/github\.com\/lytken-de\/unbait-releases\//;   // kun links til release-repoet åbnes
+// UPDATE_ZIP (kun links til release-repoet åbnes) står i shared.js – indstillingssiden bruger den også
+const UPDATE_TIMEOUT_MS = 10000;
 async function checkUpdate(force = false) {
   const { updateInfo } = await chrome.storage.local.get("updateInfo");
   if (!force && updateInfo && Date.now() - (updateInfo.checkedAt || 0) < UPDATE_EVERY) return updateInfo;
   let info;
   try {
-    const r = await fetch(UPDATE_URL + "?t=" + Date.now(), { cache: "no-store" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const j = await r.json();
+    const { res, raw } = await fetchWithTimeout(UPDATE_URL + "?t=" + Date.now(), { cache: "no-store" }, UPDATE_TIMEOUT_MS);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const j = JSON.parse(raw);
     if (!/^\d+(\.\d+)+$/.test(String(j.version || ""))) throw new Error("ugyldig version");
     info = { latest: String(j.version), zip: UPDATE_ZIP.test(String(j.zip || "")) ? String(j.zip) : "",
       notes: String(j.notes || "").slice(0, 400), checkedAt: Date.now() };
@@ -1484,6 +1412,5 @@ chrome.runtime.onInstalled.addListener(async () => {
   checkUpdate(true).catch(() => {});   // v1.92
 });
 chrome.runtime.onStartup.addListener(() => { updateIcon(); maybeCleanCache(); syncSiteScripts(); syncPauseMenus(); checkUpdate().catch(() => {}); });
-updateIcon();
-syncSiteScripts();
-syncPauseMenus();
+// v1.97 (L8): ikon, registrering af indholdsscripts og menuer sættes ved installation, ved browserens start og når
+// indstillingerne ændres – ikke længere ved hver opvågning af service workeren (de holder selv mellem opvågninger)
