@@ -11,7 +11,7 @@
   // v1.80: JFM-medier (20 sider fra Jysk Fynske Medier, samme platform): overskrifterne er h3.teaser__title
   const JFM = SITE === "jfm";
   // v1.89: Y.dk – emnerne under Skjul indhold gælder ikke (kun egne ord), som JFM-medier
-  const Y = SITE === "y";
+  const YDK = SITE === "y";
   // DR's TV- og lydsider (dr.dk/tv/ og dr.dk/lyd/): her er unbAIt DK ikke aktiv – ingen omskrivning,
   // intet skjult og ingen statusboks. Tjekkes igen, når siden skifter adresse uden genindlæsning (v1.42)
   // v1.79: DR TV ligger nu på /drtv/ (/tv/ sender videre dertil), så /tv er erstattet af /drtv
@@ -25,7 +25,7 @@
   let enabled = false;
   let runId = 0;
   const inserted = new WeakMap(); // el -> den AI-tekst, vi senest har indsat (må aldrig blive "original")
-  const cards = new WeakMap();   // el -> { url, origText, nodes, span, rewritten, showing, runId, jobId }
+  const cards = new WeakMap();   // el -> { url, origText, label, jobToken, jobId, nodes, span, anchor, rewritten, showing, kept }
   const tracked = new Set();     // elementer med tilstand (til oprydning ved sluk)
   const timers = new Set();      // genprøvnings-timere, der skal ryddes ved sluk
   let statusEl = null, processedCount = 0, failCount = 0, lastError = "";
@@ -55,7 +55,7 @@
     return r;
   }
   function flushPending() {
-    if (mo) { const recs = mo.takeRecords(); if (recs.length) handleMutations(recs); }
+    if (mo) { const recs = mo.takeRecords(); if (recs.length) { scanText?.clear(); handleMutations(recs); } }
   }
 
   function isOwn(node) {
@@ -64,7 +64,8 @@
   }
 
   // v1.93: detail = fejlteksten på sin egen linje under tælleren (højst 120 tegn), så fx hele Kilo-beskeden kan ses
-  function showStatus(msg, isError = false, detail = "") { selfWrite(() => showStatusInner(msg, isError, detail)); }
+  // v1.97 (M5): samme form som på indstillingssiden – showStatus(besked, { error, detail })
+  function showStatus(msg, { error = false, detail = "" } = {}) { selfWrite(() => showStatusInner(msg, error, detail)); }
   let aiName = "";   // vises diskret i statusboksen
   let lastStatus = null, lastDetail = "", lastMsg = "", lastIsError = false;   // det, statusboksen viser nu
   const STATUS_DETAIL_MAX = 120;
@@ -140,7 +141,16 @@
     return root.getClientRects().length > 0 ? (root.innerText || "") : textWithBreaks(root);
   }
 
+  // v1.97 (M7): under én scanning læses hver overskrifts tekst højst én gang (skjul-reglerne og udvælgelsen læste den hver sin gang).
+  // Tømmes, når sidens ventende ændringer behandles (flushPending), så en ændring aldrig gemmer sig bag en gammel tekst
+  let scanText = null;
   function cleanText(el) {
+    if (scanText?.has(el)) return scanText.get(el);
+    const t = cleanTextNow(el);
+    scanText?.set(el, t);
+    return t;
+  }
+  function cleanTextNow(el) {
     // Et ord delt med bindestreg over to linjer ("Konge-" / "mærke" på B.T.) samles til "Konge-mærke" (v1.31).
     // Kun ved linjeskift, og ikke foran "og"/"eller" ("sommer-" / "og vinterferie").
     return (readText(el) || el.textContent || "")
@@ -175,7 +185,7 @@
     // v1.89: Y.dk – linket ligger enten om overskriften eller som et lag over hele kortet (<article> > a).
     // Artikelsidens egen overskrift står i en <article> med links i brødteksten; den har intet lag og sendes ikke.
     // v1.95: det samme på Jyllands-Posten efter det nye design
-    const a = (Y || SITE === "jp") ? el.closest("a[href]") || el.closest("article")?.querySelector(":scope > a[href]")
+    const a = (YDK || SITE === "jp") ? el.closest("a[href]") || el.closest("article")?.querySelector(":scope > a[href]")
       : el.closest("a[href]") || el.querySelector("a[href]") ||
         el.closest("article, [class*='teaser'], [class*='Teaser'], [class*='dre-item']")?.querySelector("a[href]");
     if (!a) return "";
@@ -202,9 +212,9 @@
   };
   // De nye sider (v1.37) – lavet ud fra brugerens forsider 22. okt. 2026. Avisen.dk har ikke emnet i
   // adressen; der bruges kortets klasse (Category-krimi osv., se AVISEN_CATS).
-  const H = (d) => new RegExp(`(^|\\.)${d.replace(/\./g, "\\.")}$`);
-  const H_DR = H("dr.dk"), H_POL = H("politiken.dk"), H_BER = H("berlingske.dk"), H_JP = H("jyllands-posten.dk"),
-    H_N24 = H("nyheder24.dk"), H_SH = H("seoghoer.dk"), H_BB = H("billedbladet.dk");
+  const hostRe = (d) => new RegExp(`(^|\\.)${d.replace(/\./g, "\\.")}$`);
+  const H_DR = hostRe("dr.dk"), H_POL = hostRe("politiken.dk"), H_BER = hostRe("berlingske.dk"), H_JP = hostRe("jyllands-posten.dk"),
+    H_N24 = hostRe("nyheder24.dk"), H_SH = hostRe("seoghoer.dk"), H_BB = hostRe("billedbladet.dk");
   const ANY_REEL = /\/reels?\//;
   HIDE_RULES.sport.push([H_DR, /^\/sporten\//], [H_POL, /^\/sport\//], [H_BER, /^\/sport\//], [H_JP, /^\/sport\//], [H_SH, /^\/sport\//], [H_N24, /^\/sport\//]);
   HIDE_RULES.underholdning.push([H_SH, /^\/(kendte|reality|hollywood|kongelige)\//], [H_BB, /^\/(kendte|kongelige)\//], [H_N24, /^\/(kendte|kongehuset)\//]);
@@ -272,7 +282,7 @@
   // Avisen.dk's boks "Partnerlinks" har ingen overskrifter; den skjules for sig (v1.41)
   const AVISEN_PARTNER = ".page_SponsoredLinksFP";
 
-  let hideCfg = { cats: [], plus: false, words: [], mode: "remove" };
+  let hideCfg = { cats: [], plus: false, ads: false, adsAvisen: false, games: false, words: [], mode: "remove" };
   const hiddenRoots = new Map();   // kort -> pladsholder (eller null)
   const hiddenGroups = new Set();  // EB-grupper og BT's podcast-række, hvor alle kort er skjult
   const revealed = new WeakSet();  // kort, brugeren selv har klikket frem
@@ -329,7 +339,7 @@
       const cls = [...(root.classList || [])].find(c => c.startsWith("Category-"))?.slice(9).toLowerCase();
       for (const c of hideCfg.cats) if (cls && (AVISEN_CATS[c] || []).includes(cls)) return HIDE_LABELS[c];
     }
-    if (url && hideCfg.cats.length && !JFM && !Y) {   // v1.89: heller ikke Y.dk
+    if (url && hideCfg.cats.length && !JFM && !YDK) {   // v1.89: heller ikke Y.dk
       try {
         const u = new URL(url);
         for (const c of hideCfg.cats) {
@@ -654,11 +664,14 @@
   }
 
   // ---------------------------------------------------------------------
+  // Uddragets størrelse: højst EXCERPT_MAX tegn i alt; brødteksten fra strukturerede data højst BODY_MAX; er der allerede
+  // ENOUGH tegn fra beskrivelserne, hentes ingen brødtekst
+  const EXCERPT_MAX = 1500, BODY_MAX = 1200, ENOUGH = 600;
   // Artikel-uddrag (fund 06): kun tekst, der med rimelig sikkerhed tilhører
   // den aktuelle artikel. Kan det ikke afgøres, bruges intet uddrag.
   // ---------------------------------------------------------------------
   function samePage(a, b) {
-    const n = (u) => { try { const x = new URL(u, location.href); return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/+$/, "")).toLowerCase(); } catch { return ""; } };
+    const n = (u) => pagePath(u, location.href);   // samme regel som cache-nøglen i baggrunden (shared.js, v1.97)
     // Samme domæne og samme artikelnummer er samme artikel, selv om teksten i adressen er ændret
     // (EB omdøber adresser: …/cigaretter-i-kufferterne/11326381 -> …/cigaretter-i-lufthavnen/11326381) (v1.20)
     const id = (u) => { try { const x = new URL(u, location.href); const m = x.pathname.match(/(?:\/|article)(\d{6,})(?:\.ece)?\/?$/);
@@ -733,7 +746,7 @@
     const add = (t) => {
       t = (t || "").replace(/\s+/g, " ").trim();
       if (t.length < 30) return;
-      if (SITE_DESCRIPTIONS().has(t)) return;   // mediets generelle beskrivelse er ikke et uddrag (v1.19)
+      if (siteDescriptions().has(t)) return;   // mediets generelle beskrivelse er ikke et uddrag (v1.19)
       if (/cookie|abonnement|log ind|annonce|del artiklen|læs også/i.test(t)) return;
       if (parts.some(p => p.includes(t) || t.includes(p))) return;
       parts.push(t);
@@ -763,7 +776,7 @@
     const anonymous = articles.filter(a => !idOf(a));
     const chosen = matching.length ? matching
       : (canonical && articles.length === 1 && anonymous.length === 1 ? anonymous : []);
-    chosen.forEach(a => { add(a.description); if (a.articleBody && !descOnly) add(String(a.articleBody).slice(0, 1200)); });
+    chosen.forEach(a => { add(a.description); if (a.articleBody && !descOnly) add(String(a.articleBody).slice(0, BODY_MAX)); });
 
     // 2) Sidens beskrivelse – kun når siden bekræftet er artiklen
     if (canonical) add(doc.querySelector('meta[property="og:description"]')?.content);
@@ -771,20 +784,20 @@
     if (canonical) add(doc.querySelector('meta[name="description"]')?.content);
 
     // 3) Brødtekst fra artikelens egen tekstblok – ikke relaterede bokse
-    if (!descOnly && parts.join(" ").length < 600) {
+    if (!descOnly && parts.join(" ").length < ENOUGH) {
       let body = null;
       for (const sel of BODY_SELECTORS[SITE] || GENERIC_BODY) { body = doc.querySelector(sel); if (body) break; }
       body?.querySelectorAll("p").forEach(p => {
         if (p.closest(NOT_BODY)) return;
-        if (parts.join(" ").length < 1500) add(p.textContent);
+        if (parts.join(" ").length < EXCERPT_MAX) add(p.textContent);
       });
     }
-    return parts.join("\n").slice(0, 1500);
+    return parts.join("\n").slice(0, EXCERPT_MAX);
   }
 
   // Forsidens egne beskrivelser = mediets generelle tekst ("Danmarks største nyhedssite …")
   let siteDesc = null;
-  function SITE_DESCRIPTIONS() {
+  function siteDescriptions() {
     if (!siteDesc) siteDesc = new Set([...document.querySelectorAll('meta[property="og:description"], meta[name="description"]')]
       .map(m => (m.content || "").replace(/\s+/g, " ").trim()).filter(Boolean));
     return siteDesc;
@@ -844,18 +857,14 @@
     return [title, body].filter(Boolean).join("\n").slice(0, 1500);
   }
   async function fetchJson(url, ms) {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), ms);
-    try {
-      const r = await fetch(url, { credentials: "omit", signal: ctrl.signal });
-      return r.ok ? await r.json() : null;
-    } catch { return null; } finally { clearTimeout(t); }
+    try { const { res, raw } = await fetchWithTimeout(url, { credentials: "omit" }, ms); return res.ok ? JSON.parse(raw) : null; }
+    catch { return null; }
   }
   async function liveCenterContext(html, postId) {
     const lc = liveCenterChannel(html);
     if (!lc) return "";
     const base = LC_FEED + encodeURIComponent(lc.tenant) + "/" + encodeURIComponent(lc.channel) + "/";
-    let data = await fetchJson(base + "Initial/", 5000);
+    let data = await fetchJson(base + "Initial/", FEED_TIMEOUT_MS);
     for (let i = 0; data && data.success !== false; i++) {
       const res = data.result || {};
       const posts = [].concat(res.addedOrChanged || [], res.bulletins || []);
@@ -864,7 +873,7 @@
       const ids = posts.map(p => Number(p?.id)).filter(n => n > 0);
       // Indlæggene kommer nyeste først; er det ønskede nyere end det ældste hentede, findes det ikke
       if (!res.hasMore || !ids.length || i >= LC_MAX_EARLIER || Number(postId) > Math.min(...ids)) return "";
-      data = await fetchJson(base + "EarlierObj/" + Math.min(...ids) + "/", 5000);
+      data = await fetchJson(base + "EarlierObj/" + Math.min(...ids) + "/", FEED_TIMEOUT_MS);
     }
     return "";
   }
@@ -901,16 +910,12 @@
     return desc.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500);
   }
 
-  // v1.94: artikel på samme domæne som siden hentes direkte (højst 6 sekunder, højst 800.000 tegn);
-  // finalUrl = adressen efter en omdirigering. Fejler hentningen, kastes fejlen videre til getContext
+  // v1.94: artikel på samme domæne som siden hentes direkte (højst ARTICLE_TIMEOUT_MS, højst ARTICLE_MAX_CHARS tegn);
+  // finalUrl = adressen efter en omdirigering. Fejler hentningen, kastes fejlen videre til getContext (fetchWithTimeout i shared.js)
   async function fetchSameOrigin(url) {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    try {
-      const r = await fetch(url, { credentials: "include", signal: ctrl.signal });
-      if (!r.ok) return { html: "", finalUrl: "" };
-      return { html: (await r.text()).slice(0, 800000), finalUrl: r.redirected ? r.url : "" };
-    } finally { clearTimeout(t); }
+    const { res, raw } = await fetchWithTimeout(url, { credentials: "include" }, ARTICLE_TIMEOUT_MS);
+    if (!res.ok) return { html: "", finalUrl: "" };
+    return { html: raw.slice(0, ARTICLE_MAX_CHARS), finalUrl: res.redirected ? res.url : "" };
   }
 
   async function getContext(url, headline = "") {
@@ -936,7 +941,7 @@
       if (new URL(url).origin === location.origin) {
         ({ html, finalUrl } = await fetchSameOrigin(url));
       } else {
-        const r = await withTimeout(chrome.runtime.sendMessage({ action: "fetchArticle", url }), 7000, null);
+        const r = await withTimeout(chrome.runtime.sendMessage({ action: "fetchArticle", url }), ARTICLE_MSG_TIMEOUT_MS, null);
         html = r?.html || ""; finalUrl = r?.finalUrl || "";
       }
       if (!html) return "";
@@ -958,7 +963,7 @@
     if (left) msg += ` · ${left} i kø`;
     if (hiddenRoots.size) msg += ` · ${hiddenRoots.size} skjult`;
     if (failCount) msg += ` · ${failCount} fejl`;
-    showStatus(msg, failCount > 0 && processedCount === 0, failCount ? lastError : "");
+    showStatus(msg, { error: failCount > 0 && processedCount === 0, detail: failCount ? lastError : "" });
   }
 
   function distanceToViewport(el) {
@@ -1004,11 +1009,11 @@
   // »Prøv igen« og »Omskriv alligevel« laver et nyt AI-kald uden om den gemte omskrivning og opdaterer alle
   // kort med samme historie. »Behold originalen« huskes i baggrunden; ikonet står så nedtonet.
   // ---------------------------------------------------------------------
-  let menuHost = null, menuFor = null;
+  let menuHost = null;
   const MENU_CSS = `:host{all:initial}.m{position:fixed;z-index:2147483647;min-width:210px;padding:6px;background:#0F1116;border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35);font:14px/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#E6E9EF;text-align:left}
 button{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:8px;background:none;color:#E6E9EF;cursor:pointer;font:inherit;margin:0}
 button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}small{display:block;color:#8A93A3;font-size:12px;margin-top:2px}`;
-  function closeCardMenu() { menuHost?.remove(); menuHost = null; menuFor = null; }
+  function closeCardMenu() { menuHost?.remove(); menuHost = null; }
   function openCardMenu(el, btn) {
     closeCardMenu();
     const c = cards.get(el);
@@ -1034,7 +1039,6 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     for (const ev of ["click", "mousedown", "pointerdown", "contextmenu"]) m.addEventListener(ev, (e) => e.stopPropagation());
     root.append(st, m);
     selfWrite(() => document.documentElement.appendChild(menuHost));
-    menuFor = el;
     const r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
     m.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
     m.style.top = (r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : r.bottom + 6) + "px";
@@ -1105,21 +1109,21 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     }
     updateStatus();
     showStatus((action === "again" ? "Omskriv alligevel" : "Prøv igen") + " gav ingen ny omskrivning" +
-      (res?.error ? " (" + String(res.error).slice(0, 60) + ")" : res?.timeout ? " (AI svarede ikke i tide)" : ""), !!res?.error);
+      (res?.error ? " (" + String(res.error).slice(0, 60) + ")" : res?.timeout ? " (AI svarede ikke i tide)" : ""), { error: !!res?.error });
   }
 
   // v1.94: fælles for den almindelige omskrivning og »Prøv igen«/»Omskriv alligevel«
   // Artiklens uddrag (højst 8 sekunder); huskes til »Skjul indhold« (egne ord tjekkes også i uddraget, v1.77) – men kun,
   // hvis opgaven stadig gælder (valid): et uddrag fra den forrige artikel må ikke skjule den nye (v1.90, audit A-02)
   async function fetchContext(el, c, valid = () => true) {
-    const context = await withTimeout(getContext(c.url, c.origText), 8000, "");
+    const context = await withTimeout(getContext(c.url, c.origText), CONTEXT_TIMEOUT_MS, "");
     if (context && valid()) excerptText.set(el, context.toLowerCase());
     return context;
   }
   // Beder baggrunden om en omskrivning (højst 90 sekunder). Baggrunden afgør, om adressens tekst bruges
   function requestRewrite(c, context, jobId, force = false) {
     return withTimeout(chrome.runtime.sendMessage({ action: "rewrite", ...(force ? { force: true } : {}), text: c.origText, article: c.url, context,
-      label: c.label, urlText: urlText(c.url), jobId }), 90000, { timeout: true });
+      label: c.label, urlText: urlText(c.url), jobId }), REWRITE_TIMEOUT_MS, { timeout: true });
   }
 
   function applyResult(job, res) {
@@ -1169,7 +1173,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
         chrome.runtime.sendMessage({ action: "cancelJob", jobId }).catch(() => {});
         if ((job.timeouts || 0) < 2) {
           job.timeouts = (job.timeouts || 0) + 1;
-          later(() => { if (alive(job)) { pending.push(job); updateStatus(); pump(); } }, 5000);
+          later(() => { if (alive(job)) { pending.push(job); updateStatus(); pump(); } }, RETRY_WAIT_MS);
           return;
         }
         applyResult(job, { error: "AI svarede ikke i tide" });
@@ -1180,7 +1184,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
       const m = e.message || String(e);
       if (/context invalidated/i.test(m)) {
         pending.length = 0;
-        showStatus("Extensionen er opdateret – genindlæs siden", true);
+        showStatus("Extensionen er opdateret – genindlæs siden", { error: true });
         return;
       }
       if (/message channel closed|Receiving end does not exist|Could not establish connection/i.test(m) && !job.retried) {
@@ -1207,7 +1211,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     selfWrite(() => { el.dataset.unbait = "pending"; });
     const job = { el, runId, token: c.jobToken, url: c.url };
     try {
-      const res = await withTimeout(chrome.runtime.sendMessage({ action: "cached", text, article: c.url }), 5000, { miss: true });
+      const res = await withTimeout(chrome.runtime.sendMessage({ action: "cached", text, article: c.url }), CACHED_TIMEOUT_MS, { miss: true });
       if (!alive(job)) return;
       if (res && !res.miss && !res.off) {
         applyResult(job, res);
@@ -1246,7 +1250,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     // v1.89: Y.dk – kun kort med et link (om overskriften eller som lag over kortet), ikke artikelsidens egen overskrift
     // v1.90: også de grå tekstkort uden billede (article.bg-surface-toggle), hvor overskriften står i et <p>.
     // Kun de grå kort – <p> i andre kort er underrubrikker
-    if (Y) return "article:has(> a[href]) :is(h1, h2, h3), a[href] :is(h1, h2, h3), article.bg-surface-toggle:has(> a[href]) > p";
+    if (YDK) return "article:has(> a[href]) :is(h1, h2, h3), a[href] :is(h1, h2, h3), article.bg-surface-toggle:has(> a[href]) > p";
     if (SITE === "nyheder24") return ".post-card .post-heading, a.recent-news-slider__item span.text-body-text";
     return ".tc_heading";
   }
@@ -1283,6 +1287,10 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
 
   function scan() {
     if (!enabled) return;
+    scanText = new Map();
+    try { scanInner(); } finally { scanText = null; }
+  }
+  function scanInner() {
     // v1.90 (audit F-01): kort, som siden har fjernet, glemmes (og deres opgave annulleres), så de ikke fylder i hukommelsen
     for (const el of [...tracked]) if (!el.isConnected) resetCard(el, false);
     for (const el of waiting) if (!el.isConnected) { waiting.delete(el); io.unobserve(el); }
@@ -1323,8 +1331,11 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
       if (!looksLikeHeadline(cleanText(el))) continue;
       fresh.push(el);
     }
-    // Hvis både et element og et barn af det matcher, så brug kun barnet
-    fresh.filter(el => !waiting.has(el) && !fresh.some(o => o !== el && el.contains(o))).forEach(el => { waiting.add(el); io.observe(el); });
+    // Hvis både et element og et barn af det matcher, så brug kun barnet. v1.97 (M7): hvert element går op gennem sine
+    // forældre én gang (før blev alle par sammenlignet – kvadratisk i antallet af overskrifter)
+    const freshSet = new Set(fresh), hasChild = new Set();
+    for (const el of fresh) for (let a = el.parentElement; a; a = a.parentElement) if (freshSet.has(a)) hasChild.add(a);
+    fresh.filter(el => !waiting.has(el) && !hasChild.has(el)).forEach(el => { waiting.add(el); io.observe(el); });
     // v1.94: kun når siden slet ingen overskrifter har (heller ingen fejlede, afviste, beholdte eller skjulte) – ellers
     // bliver optællingen og en evt. fejlbesked stående (før: når intet var omskrevet, også hvis alle havde fejlet)
     if (!fresh.length && !tracked.size && !hiddenRoots.size && !pending.length && !running) showStatus("Fandt ingen overskrifter (endnu)");
@@ -1414,7 +1425,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     chrome.runtime.sendMessage({ action: "getEnabled" }, (res) => {
       if (chrome.runtime.lastError || !res) return;
       aiName = res.model || "";
-      if (statusEl && lastStatus) showStatus(lastMsg, lastIsError, lastDetail);   // v1.94: samme besked og farve som før
+      if (statusEl && lastStatus) showStatus(lastMsg, { error: lastIsError, detail: lastDetail });   // v1.94: samme besked og farve som før
     });
   }
   // Baggrunden siger til, når nøglerne er ændret (dem kan indholdsscriptet ikke selv se)
