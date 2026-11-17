@@ -1436,7 +1436,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
   chrome.storage.onChanged.addListener((changes, area) => {
     // v1.64: også modelskift hos OpenAI og OpenRouter (Gemini skifter udbyder med modellen)
     // v1.75: også puljen og nøglerne (»+ flere« efter modelnavnet)
-    if (area === "sync" && (changes.provider || changes.openaiModel || changes.openrouterModel || changes.groqModel || changes.pool)) refreshAiName();
+    if (area === "sync" && (changes.provider || changes.openaiModel || changes.openrouterModel || changes.groqModel || changes.ollamaModel || changes.pool)) refreshAiName();
     if (area === "sync" && Object.keys(HIDE_DEFAULTS).some(k => changes[k])) {
       // Nye skjul-indstillinger gælder med det samme
       loadHideCfg().then(() => { if (!enabled) return; unhideAll(); scan(); updateStatus(); });
