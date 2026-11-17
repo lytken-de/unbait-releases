@@ -35,7 +35,7 @@ const MAX_WORDS_FIRST = 17, MAX_WORDS_RETRY = 20, WORDS_MIN = 5, WORDS_MAX = 40;
 //   models        modelliste: { id, name, paid?, prices? } (OpenAI, Groq og OpenRouter; andre har én fast model)
 //   url + body    OpenAI-kompatible kald: adressen og felterne ud over model og beskeder, i den rækkefølge de sendes.
 //                 Anthropic, Gemini og Chromes indbyggede AI har ingen url – de bygges særskilt i callAI.
-//   keyless       true = kræver ingen API-nøgle (Chromes indbyggede AI, Kilo uden nøgle)
+//   keyless       true = kræver ingen API-nøgle (Chromes indbyggede AI, Kilo uden nøgle, Ollama)
 //   keyPlaceholder, keyFamily   nøglefeltets pladsholder og nøglens kendetegn (indstillingssiden)
 //   group         to interne udbydere i samme punkt i »AI-udbyder« (gemini/gemini_free, kilo/kilo_key)
 //   tier          unbAIt DK's egne gratis-grænser: { limitsKey, usageKey, defaults, day, dayMsg, tokMsg?, hourMsg? }
@@ -51,6 +51,9 @@ function pacificDay() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Ame
 const DEFAULT_FREE_LIMITS = { rpm: 15, rpd: 500, tpm: 250000 };
 const KILO_HOUR_MSG = (n) => `Timens Kilo-grænse er nået (${n} forespørgsler)`;
 const GROQ_TOK_MSG = "Dagens tokens hos Groq er brugt – skift model eller vent til i morgen";   // brugerens tekst (v1.69)
+// Ollamas faste adresse (v1.98); adgangen gives af brugeren (optional_host_permissions), når Ollama vælges
+const OLLAMA_URL = "http://localhost:11434";
+const OLLAMA_ORIGINS = [OLLAMA_URL + "/*"];
 const CHAT_BODY_300 = () => ({ max_tokens: 300, temperature: 0.3 });
 const PROVIDERS = {
   // OpenAI (v1.58): modellen vælges i listen »Model«; GPT-6 Luna er standard. Ingen tænkning: hurtigere og billigere;
@@ -129,6 +132,13 @@ const PROVIDERS = {
     url: "https://ai-gateway.kilo.ai/api/v1/chat/completions", body: () => ({ max_tokens: 4000, temperature: 0.3 }),
     tier: { limitsKey: "kiloKeyLimits", usageKey: "kiloKeyUsage", defaults: { rph: 250 }, day: utcDay, hourMsg: KILO_HOUR_MSG },
     hint: "unbAIt DK's egen grænse. Kilo tillader ca. 300 kald i timen med en gratis konto." },
+  // Ollama (v1.98, brugerens ønske 17. nov. 2026; som i svAIr v0.06): en lokal model på brugerens egen computer på den faste
+  // adresse OLLAMA_URL. Ingen nøgle, ingen fast model – modellen er den, brugeren har valgt blandt dem, Ollama selv har hentet
+  // (indstillingen ollamaModel). Tænkningen slås fra (reasoning_effort "none"; docs.ollama.com/api/openai-compatibility:
+  // »"none" requests false« for modeller, der kan slå den fra – GPT-OSS kan ikke og tænker lidt). Ingen gratis-grænser og
+  // ikke i puljen; ét kald ad gangen (baggrunden).
+  ollama: { name: "Ollama (lokal)", model: "", modelName: "Ingen model valgt", keyless: true,
+    url: OLLAMA_URL + "/v1/chat/completions", body: () => ({ max_tokens: 2000, temperature: 0.3, reasoning_effort: "none", stream: false }) },
   // Chromes indbyggede model (Prompt API / Gemini Nano) – kører lokalt, ingen nøgle, intet sendes ud af huset
   chrome_local: { name: "Chrome indbygget AI", model: "gemini-nano", modelName: "Gemini Nano i Chrome (lokalt, eksperimentel)", keyless: true }
 };

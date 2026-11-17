@@ -60,7 +60,8 @@ const groqModel = (id) => GROQ_MODELS.find(m => m.id === id) || GROQ_MODELS[0];
 const pickModel = (provider, id) => provider === "openrouter" ? openrouterModel(id) : provider === "openai" ? openaiModel(id)
   : provider === "groq" ? groqModel(id) : null;
 // Navnet på den model, der bruges (statusboks og indstillinger)
-const modelNameFor = (s) => pickModel(s.provider, s.model)?.name || MODEL_NAMES[s.provider] || "";
+// Ollama (v1.98): modellens navn er det, Ollama selv bruger (fx "gemma4:e4b")
+const modelNameFor = (s) => s.provider === "ollama" ? (s.model || MODEL_NAMES.ollama) : pickModel(s.provider, s.model)?.name || MODEL_NAMES[s.provider] || "";
 // Alle udbyderes modeller samlet ét sted (v1.67): indstillingerne viser én liste "Model" ud fra denne.
 // value = det, listen gemmer; provider = den udbyder, valget betyder; model = modellens id (OpenAI/OpenRouter).
 // Gemini: de to modeller er to udbydere (gemini/gemini_free) med hver sin nøgle og grænse.
@@ -76,7 +77,8 @@ function modelGroups() {
     groq: GROQ_MODELS.map(m => item("groq", m.id, m.name)),
     gemini: ["gemini", "gemini_free"].map(p => item(p, "", MODEL_NAMES[p])),
     openai: OPENAI_MODELS.map(m => item("openai", m.id, m.name)),
-    openrouter: OPENROUTER_MODELS.map(m => item("openrouter", m.id, m.name, { paid: !!m.paid }))
+    openrouter: OPENROUTER_MODELS.map(m => item("openrouter", m.id, m.name, { paid: !!m.paid })),
+    ollama: []   // v1.98: modellerne hentes fra Ollama på indstillingssiden (»Hent modeller fra Ollama«)
   };
 }
 // Forbrug tælles pr. OpenAI-model (v1.58); GPT-6 Luna beholder sin gamle tæller "openai"
@@ -160,7 +162,7 @@ async function viaOffscreen(msg) {
 
 async function getSettings() {
   const s = await chrome.storage.sync.get({ provider: "openai", prompt: DEFAULT_PROMPT, enabled: true,
-    maxWordsFirst: MAX_WORDS_FIRST, maxWordsRetry: MAX_WORDS_RETRY, openrouterModel: "", openaiModel: "", groqModel: "", pool: [] });
+    maxWordsFirst: MAX_WORDS_FIRST, maxWordsRetry: MAX_WORDS_RETRY, openrouterModel: "", openaiModel: "", groqModel: "", ollamaModel: "", pool: [] });
   const { apiKeys = {} } = await chrome.storage.local.get("apiKeys");
   if (!isProvider(s.provider)) s.provider = "openai"; // ukendt udbyder (fx fra en ændret sikkerhedskopi) -> standardvalget
   s.prompt = s.prompt || DEFAULT_PROMPT;
@@ -169,6 +171,7 @@ async function getSettings() {
   s.pool = Array.isArray(s.pool) ? s.pool.filter(x => typeof x === "string") : [];
   // OpenRouter: den valgte model (ukendt eller fjernet model -> standardvalget). Modellen indgår i cache-nøglen.
   s.model = pickModel(s.provider, { openrouter: s.openrouterModel, openai: s.openaiModel, groq: s.groqModel }[s.provider])?.id || FIXED_MODELS[s.provider];
+  if (s.provider === "ollama") s.model = String(s.ollamaModel || "").trim();   // v1.98: modellen, brugeren har valgt i Ollama
   // Brugerens egne ordgrænser (v1.22): 5–40, og andet forsøg aldrig under første
   const w = (x, d) => { x = parseInt(x, 10); return Number.isInteger(x) && x >= WORDS_MIN && x <= WORDS_MAX ? x : d; };
   s.maxWordsFirst = w(s.maxWordsFirst, MAX_WORDS_FIRST);
@@ -610,7 +613,9 @@ async function callAI({ text = "", settings, context = "", signal, feedback = ""
   const prompt = raw ? raw.system : settings.prompt;
   const userMsg = raw ? raw.user : buildUserMsg(text, context, feedback, label, urlText);
   if (!isProvider(settings.provider)) throw new Error("Ukendt udbyder: " + settings.provider);
-  const model = pickModel(settings.provider, settings.model)?.id || FIXED_MODELS[settings.provider];
+  const ollama = settings.provider === "ollama";
+  const model = ollama ? String(settings.model || "").trim() : pickModel(settings.provider, settings.model)?.id || FIXED_MODELS[settings.provider];
+  if (ollama && !model) throw new Error(OLLAMA_MSG.noModel);   // v1.98
   if (settings.provider === "chrome_local") {
     if (raw) throw new Error("Chromes indbyggede AI kan ikke bruges til forslag til prompten");
     return callLocalAI(prompt, userMsg, signal, !!feedback);
@@ -637,7 +642,7 @@ async function callAI({ text = "", settings, context = "", signal, feedback = ""
     if (settings.provider === "openrouter") logAnswerModel(settings.provider + "|" + model, "OpenRouter:", openrouterModel(model).name, data.model);
     if (kilo) logAnswerModel(settings.provider, "Kilo Code:", MODEL_NAMES[settings.provider], data.model);
     recordUsage(statsKey(settings.provider, model), { ...usageFrom(settings.provider, data), ms, retry: !!feedback });   // feedback = andet forsøg
-    rewritten = answerText(settings.provider, data, kilo);
+    rewritten = answerText(settings.provider, data, kilo || ollama);   // v1.98: også Ollama kan skrive <think>…</think>
     // Tomt svar, fordi tænkningen brugte hele pladsen (Free Models Router, v1.52), eller fordi tænkningen står i "reasoning"
     // og intet i "content" (Kilo Code, v1.86, uanset finish_reason): prøves én gang mere, forfra med tænkning slået fra
     const fr = data.choices?.[0]?.finish_reason || "?";
@@ -705,8 +710,11 @@ async function sendWithFixes(ctx) {
   for (let attempt = 0; ; attempt++) {
     const { reserved, stamp } = await reserveSlot(ctx);
     if (ctx.signal?.aborted) throw new Error("aborted: slukket");
-    const t0 = Date.now();
-    const { res, raw } = await fetchWithTimeout(ctx.url, { method: "POST", headers: ctx.headers, body: JSON.stringify(ctx.body) }, AI_TIMEOUT_MS, ctx.signal);
+    const send = () => fetchWithTimeout(ctx.url, { method: "POST", headers: ctx.headers, body: JSON.stringify(ctx.body) }, AI_TIMEOUT_MS, ctx.signal);
+    const ollama = ctx.settings.provider === "ollama";
+    let t0 = Date.now();
+    // v1.98: Ollama får ét kald ad gangen (en lokal model tager dem alligevel i kø); tidsgrænsen (30 s) gælder fra kaldet sendes
+    const { res, raw } = ollama ? await ollamaQueue(() => { t0 = Date.now(); return ollamaSend(send, ctx); }) : await send();
     const ms = Date.now() - t0;   // svartid for selve kaldet (ikke ventetid i kø eller minutgrænse) (v1.24)
     if (ctx.tier) await settleReservation(ctx, raw, reserved, stamp, res.ok);
     const status = responseStatus(ctx.settings.provider, res, raw);
@@ -714,6 +722,8 @@ async function sendWithFixes(ctx) {
     // v1.90: Kilos 429 sætter varianten på pause (se KILO_PAUSE_MS). Fejlen kastes som før, så puljen straks tager reserven;
     // uden reserve stopper næste forsøg ved pausen i gateOnce uden at sende noget
     if (status === 429 && isKiloTier(ctx.tier)) await setKiloPause(ctx.tier);
+    if (ollama && status === 403) throw new Error(OLLAMA_MSG.origins);
+    if (ollama && status === 404 && /model/i.test(raw)) throw new Error(OLLAMA_MSG.unknown(ctx.model));
     const fix = status === 400 && attempt < FIX_ATTEMPTS ? findFix(ctx.body, raw) : null;
     if (!fix) throw new Error(`HTTP ${status}: ${raw.slice(0, 300)}`);
     applyFix(ctx.body, fix);
@@ -721,6 +731,42 @@ async function sendWithFixes(ctx) {
     ulog("info", "Model", ctx.body.model, "– tilpasser kald:", fix, ctx.router ? "(kun dette kald)" : "");
   }
 }
+// ---- Ollama (v1.98) ----
+const ollamaQueue = serialQueue();
+// Beskederne til statusboksen og »Test forbindelse« (som i svAIr). De matcher ikke køens genforsøg (enqueue), så en Ollama,
+// der ikke kører eller er for langsom, ikke prøves igen fire gange
+const OLLAMA_MSG = {
+  noModel: "Vælg en Ollama-model i indstillingerne",
+  origins: "Ollama afviste kaldet fra unbAIt DK. Ollama skal have lov til at tage imod kald fra udvidelsen (OLLAMA_ORIGINS). Se indstillingerne",
+  offline: "Ingen forbindelse til Ollama på denne computer. Start Ollama, og prøv igen",
+  slow: "Ollama svarede ikke inden for 30 sekunder. Modellen er for langsom på denne computer",
+  noPermission: "Chrome gav ikke lov til Ollama. Vælg Ollama i indstillingerne igen",
+  unknown: (m) => `Ollama kender ikke modellen »${m}«. Vælg en anden model i indstillingerne`
+};
+async function ollamaSend(send, ctx) {
+  if (!(await chrome.permissions.contains({ origins: OLLAMA_ORIGINS }).catch(() => false))) throw new Error(OLLAMA_MSG.noPermission);
+  if (ctx.signal?.aborted) throw new Error("aborted: slukket");
+  try { return await send(); }
+  catch (e) {
+    if (ctx.signal?.aborted || /slukket/.test(e.message || "")) throw e;
+    throw new Error(e?.name === "AbortError" ? OLLAMA_MSG.slow : OLLAMA_MSG.offline);
+  }
+}
+// Indstillingssidens »Hent modeller fra Ollama«: { models: [navne] } eller { error: "permission" | "origins" | "offline" | "http" }
+async function ollamaModels() {
+  if (!(await chrome.permissions.contains({ origins: OLLAMA_ORIGINS }).catch(() => false))) return { error: "permission" };
+  try {
+    const { res, raw } = await fetchWithTimeout(OLLAMA_URL + "/api/tags", { method: "GET" }, 8000);
+    if (res.status === 403) return { error: "origins" };
+    if (!res.ok) return { error: "http", status: res.status };
+    let list = [];
+    try { list = (JSON.parse(raw).models || []).map(m => String(m.name || m.model || "")).filter(Boolean); } catch {}
+    return { models: [...new Set(list)].sort((a, b) => a.localeCompare(b)) };
+  } catch {
+    return { error: "offline" };
+  }
+}
+
 // Plads til ét kald: puljens reservation (pre, kun første gang), ellers ventes der på plads i minutvinduet
 async function reserveSlot(ctx) {
   if (!ctx.tier) return { reserved: 0, stamp: 0 };
@@ -749,6 +795,7 @@ function responseStatus(provider, res, raw) {
   return res.status;
 }
 // Svarets tekst pr. udbyderform. v1.84: tænkning, der står i selve svaret (<think>…</think>), fjernes ved Kilo Code
+// (og fra v1.98 ved Ollama)
 function answerText(provider, data, kilo) {
   if (provider === "anthropic") {
     const textBlock = data.content?.find(c => c.type === "text" || c.text);
@@ -1171,7 +1218,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "keepOriginal": return reply(setKept(msg));   // v1.91
     case "tabIcon": setTabPaused(sender.tab?.id, !!msg.paused); return false;   // v1.91: pauset medie
     case "getEnabled": return reply(Promise.all([getSettings(), getSites(), getPaused()]).then(([s, sites, paused]) =>
-      ({ enabled: s.enabled !== false, model: modelNameFor(s) + (poolCandidates(s).length > 1 ? " + flere" : ""), sites, paused })));   // v1.91: pausede medier   // v1.75: »+ flere«, når puljen kan bruges
+      ({ enabled: s.enabled !== false, model: (s.provider === "ollama" ? "Ollama · " : "") + modelNameFor(s) + (poolCandidates(s).length > 1 ? " + flere" : ""), sites, paused })));   // v1.91: pausede medier   // v1.75: »+ flere«, når puljen kan bruges
   }
   if (!fromExtensionPage) return false;
   switch (msg.action) {
@@ -1182,6 +1229,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         ({ tierLimits: Object.fromEntries(Object.keys(FREE_TIERS).map((t, i) => [t, all[i]])), modelGroups: modelGroups(), poolEntries: poolEntries(),
            tierKeys: Object.fromEntries(Object.entries(FREE_TIERS).map(([k, t]) => [k, t.limitsKey])),
            tierDefaults: Object.fromEntries(Object.entries(FREE_TIERS).map(([k, t]) => [k, t.defaults])) })));
+    case "ollamaModels": return reply(ollamaModels());   // v1.98
     case "freeUsage": return reply(getFreeUsage(FREE_TIERS[msg.tier] ? msg.tier : "gemini_free"));
     case "clearCache": return reply(clearCache());
     case "tokenStats": return reply(getTokenStats(msg.provider));

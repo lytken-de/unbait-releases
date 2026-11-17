@@ -31,7 +31,7 @@ let usage = null;   // dagens forbrug for den valgte gratis-tæller (v1.73)
 // Baggrundsscriptet sender alle udbyderes modeller (modelGroups): gruppe = værdien i "AI-udbyder",
 // hvert punkt { value, name, provider, model?, paid? }. Gemini: de to modeller er to udbydere (gemini/gemini_free).
 let GROUPS = {};
-const chosenModel = { gemini: "gemini", kilo: "kilo", openai: "", openrouter: "", groq: "" };   // sidst valgte model pr. gruppe (gemmes i sync)
+const chosenModel = { gemini: "gemini", kilo: "kilo", openai: "", openrouter: "", groq: "", ollama: "" };   // sidst valgte model pr. gruppe (gemmes i sync)
 const GEMINI = ["gemini", "gemini_free"];
 // v1.85: også Kilo Code har to »modeller«, der er to udbydere (uden og med nøgle)
 const KILO = ["kilo", "kilo_key"];
@@ -47,6 +47,40 @@ const nameOf = () => choice().name || "";
 const tierOfChoice = () => choice().tier || null;
 const statsKeyOfChoice = () => choice().statsKey || chosenProvider();
 const poolIdOfChoice = () => choice().poolId || "";
+// ---- Ollama (v1.98, som i svAIr): listen hentes fra Ollama selv (»Hent modeller fra Ollama«); indtil da kun den gemte model ----
+const ollamaItem = (n) => ({ value: n, name: n || "Ingen model valgt", provider: "ollama", model: n, tier: null, statsKey: "ollama", poolId: "" });
+function setOllamaModels(names) { GROUPS.ollama = names.length ? names.map(ollamaItem) : [ollamaItem("")]; }
+let ollamaFetched = false;
+function showOllamaOrigins(show) {
+  $("ollamaOriginsText").textContent = "OLLAMA_ORIGINS=chrome-extension://" + chrome.runtime.id;
+  $("ollamaOrigins").hidden = !show;
+}
+// Chrome spørger om lov til at kontakte Ollama (skal ske i et klik). Giver true, når der er lov
+async function askOllamaPermission() {
+  try { if (await chrome.permissions.contains({ origins: OLLAMA_ORIGINS })) return true; } catch {}
+  try { return await chrome.permissions.request({ origins: OLLAMA_ORIGINS }); } catch { return false; }
+}
+async function fetchOllama() {
+  ollamaFetched = true;
+  const st = $("ollamaStatus");
+  st.className = "ostat"; st.textContent = "Henter …";
+  if (!(await askOllamaPermission())) { st.className = "ostat warn"; st.textContent = "Chrome gav ikke lov til Ollama."; return; }
+  let r = null;
+  try { r = await chrome.runtime.sendMessage({ action: "ollamaModels" }); } catch {}
+  showOllamaOrigins(r?.error === "origins");
+  if (r?.models) {
+    const keep = chosenModel.ollama;
+    setOllamaModels(r.models.includes(keep) || !keep ? r.models : [keep, ...r.models]);
+    if (!keep && r.models.length) chosenModel.ollama = r.models[0];
+    if (group() === "ollama") { fillModels(); showProvider(chosenProvider()); changed(); }
+    st.className = "ostat ok";
+    st.textContent = r.models.length ? `✓ ${r.models.length} ${r.models.length === 1 ? "model" : "modeller"} fundet` : "Ollama svarer, men har ingen modeller. Hent en model i Ollama først.";
+  } else {
+    st.className = "ostat warn";
+    st.textContent = r?.error === "origins" ? "Ollama afviste kaldet fra unbAIt DK." : r?.error === "permission" ? "Chrome gav ikke lov til Ollama."
+      : r?.error === "offline" ? "Ingen forbindelse til Ollama på denne computer. Start Ollama, og prøv igen." : "Ollama svarede med en fejl" + (r?.status ? ` (HTTP ${r.status})` : "") + ".";
+  }
+}
 function fillModels() {
   const g = group(), list = GROUPS[g] || [];
   $("model").replaceChildren(...$("model").querySelectorAll(":scope > button"), ...list.map(m => { const o = document.createElement("option"); o.value = m.value; o.textContent = m.name; return o; }));
@@ -210,6 +244,7 @@ function usedVsLimit(u, L, t = currentTier) {
 // Noten i AI-kassens bund; ved OpenRouters Free Models Router en ekstra linje (v1.53)
 const ROUTER_NOTE = "Den valgte model giver flere fejl end normalt.";
 function showAiNote() {
+  if (currentProvider === "ollama") { $("aiNote").textContent = "Overskrifterne omskrives én ad gangen og langsommere end hos online-udbydere."; return; }   // v1.98
   const lines = ["Overskrifterne omskrives langsommere end med betalte udbydere."];
   if (currentProvider === "openrouter" && choice().model === "openrouter/free") lines.push(ROUTER_NOTE);
   $("aiNote").replaceChildren(...lines.flatMap((t, i) => i ? [document.createElement("br"), t] : [t]));
@@ -217,7 +252,7 @@ function showAiNote() {
 async function showFreeInfo() {
   const box = $("freeBox"), p = currentProvider, t = currentTier;
   // Betalte OpenRouter-modeller (v1.62) har ingen gratis-grænser
-  if (!isTier(t) || (p === "openrouter" && orPaid())) { box.style.display = "none"; $("freeRow").style.display = "none"; $("aiNote").textContent = ""; usage = null; showStats(); return; }
+  if (!isTier(t) || (p === "openrouter" && orPaid())) { box.style.display = "none"; $("freeRow").style.display = "none"; $("aiNote").textContent = ""; if (p === "ollama") showAiNote(); usage = null; showStats(); return; }
   let u = { requests: 0, tokens: 0 };
   try { u = await chrome.runtime.sendMessage({ action: "freeUsage", tier: t }); } catch {}
   if (p !== currentProvider || t !== currentTier) return;
@@ -296,7 +331,7 @@ async function showStats() {
     if (isLocal(p)) {
       tile("Tokens", "Ingen", "kører lokalt, intet at betale for", true);
     } else {
-      const inTile = tile("Tokens ind", nf(s.input), "", true);
+      const inTile = tile("Tokens ind", nf(s.input), p === "ollama" ? "kører lokalt, intet at betale for" : "", true);   // v1.98
       if (s.cached) {
         const pct = Math.min(100, s.cached / Math.max(1, s.input) * 100);
         const split = el("div", "split"); const bl = document.createElement("b"); bl.style.width = pct + "%"; const gr = document.createElement("i"); gr.style.width = (100 - pct) + "%"; split.append(bl, gr);
@@ -346,6 +381,8 @@ function showProvider(p) {
   $("kiloNote").style.display = p === "kilo" ? "" : "none";
   $("kiloKeyNote").style.display = p === "kilo_key" ? "" : "none";   // v1.85
   $("localBox").style.display = isLocal(p) ? "block" : "none";
+  $("ollamaBox").style.display = p === "ollama" ? "block" : "none";   // v1.98
+  if (p !== "ollama") $("ollamaOrigins").hidden = true;
   if (isTier(t)) { const L = { ...TIER_DEFAULTS[t], ...(TIER_LIMITS[t] || {}) }; $("limRpm").value = L.rpm ?? ""; $("limRpd").value = L.rpd ?? ""; $("limTpm").value = L.tpm ?? ""; $("limTpd").value = L.tpd ?? ""; $("limRph").value = L.rph ?? ""; }
   // v1.87: Kilo Code har kun »Kald pr. time (RPH)«; RPM og RPD skjules
   const hour = isHourTier(t);
@@ -637,7 +674,7 @@ async function doSave() {
       // v1.69: alle tælleres grænser under deres egen lagernøgle (fx groqLimits, groqLimits:openai/gpt-oss-20b)
       chrome.storage.local.set({ apiKeys: keys, ...Object.fromEntries(Object.entries(limits).filter(([t, L]) => L && TIER_KEYS[t]).map(([t, L]) => [TIER_KEYS[t], L])) }),
       chrome.storage.sync.set({ provider: s.provider, prompt: s.prompt, ...readHide(), maxWordsFirst: words.first, maxWordsRetry: words.retry, sites: readSites(),
-        openrouterModel: chosenModel.openrouter, openaiModel: chosenModel.openai, groqModel: chosenModel.groq, pool: chosenPool })
+        openrouterModel: chosenModel.openrouter, openaiModel: chosenModel.openai, groqModel: chosenModel.groq, ollamaModel: chosenModel.ollama, pool: chosenPool })
     ]);
   } catch (e) {
     // Ændringerne er IKKE gemt – de bliver stående i felterne og prøves igen ved næste ændring (fund S07)
@@ -669,13 +706,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Udbyder og prompt følger Chrome-kontoen (sync); nøgler ligger kun lokalt
   const data = await chrome.storage.sync.get({ provider: "openai", prompt: DEFAULT_PROMPT, ...HIDE_DEFAULTS,
-    maxWordsFirst: MAX_WORDS_FIRST, maxWordsRetry: MAX_WORDS_RETRY, standardPrompt: "", sites: null, openrouterModel: "", openaiModel: "", groqModel: "", pool: [] });
+    maxWordsFirst: MAX_WORDS_FIRST, maxWordsRetry: MAX_WORDS_RETRY, standardPrompt: "", sites: null, openrouterModel: "", openaiModel: "", groqModel: "", ollamaModel: "", pool: [] });
   chosenPool = (Array.isArray(data.pool) ? data.pool : []).filter(id => POOL_ENTRIES.some(e => e.id === id));   // v1.70
   // Gemte modeller hos OpenAI og OpenRouter; findes en ikke længere i listen, vælges den første
   const valid = (g, v) => (GROUPS[g] || []).some(m => m.value === v) ? v : (GROUPS[g]?.[0]?.value || "");
   chosenModel.openai = valid("openai", data.openaiModel);
   chosenModel.openrouter = valid("openrouter", data.openrouterModel);
   chosenModel.groq = valid("groq", data.groqModel);
+  chosenModel.ollama = typeof data.ollamaModel === "string" ? data.ollamaModel.trim() : "";   // v1.98
+  setOllamaModels(chosenModel.ollama ? [chosenModel.ollama] : []);
   standardPrompt = data.standardPrompt || "";
   $("maxFirst").value = data.maxWordsFirst; $("maxRetry").value = data.maxWordsRetry;
   showHide(data);
@@ -704,7 +743,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     showProvider(chosenProvider());
     changed();
   };
-  $("provider").addEventListener("change", () => { fillModels(); providerChanged(); });
+  $("provider").addEventListener("change", () => {
+    fillModels(); providerChanged();
+    if (group() === "ollama" && !ollamaFetched) fetchOllama();   // v1.98: spørger om lov og henter modellerne
+  });
+  $("ollamaFetch").addEventListener("click", fetchOllama);
+  $("ollamaCopy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("ollamaOriginsText").textContent); $("ollamaCopy").textContent = "✓ Kopieret"; }
+    catch { getSelection().selectAllChildren($("ollamaOriginsText")); }
+    setTimeout(() => { $("ollamaCopy").textContent = "Kopiér"; }, 2000);
+  });
   // Modelskift: ved Gemini skifter udbyderen (gemini/gemini_free); ellers følger forbrug, noter og grænser modellen
   $("model").addEventListener("change", () => { chosenModel[group()] = $("model").value; providerChanged(); });
   $("apiKey").addEventListener("input", () => { updateKeyHint(); clearTest(); clearConn(); showPool(); changed(TYPE_PAUSE); });
@@ -821,7 +869,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // v1.90 (audit F-04): er udbyder eller model skiftet under testen, gælder resultatet ikke det nye valg –
       // forbindelsesstatus røres ikke, og resultatet viser navnet på den testede model (v1.91)
       if (sameChoice()) setConn(!res.error);
-      if (res.error) showTest("err", ...testError(res.error, s.provider));
+      if (res.error) { showTest("err", ...testError(res.error, s.provider)); if (/OLLAMA_ORIGINS/.test(res.error)) showOllamaOrigins(true); }   // v1.98
       else showTest("ok", "Forbindelsen virker", `${testedName} svarede: "${res.rewritten}"`);
       showFreeInfo(); // testen tæller også med i den gratis kvote
     } catch (e) {
@@ -1013,7 +1061,7 @@ function updateHome() {
 }
 function updateHomeNow() {
   if (!$("heroTitle") || !GROUPS || !Object.keys(GROUPS).length) return;
-  const free = isTier(currentTier) && !orPaid(), local = isLocal(currentProvider);
+  const free = isTier(currentTier) && !orPaid(), local = isLocal(currentProvider) || currentProvider === "ollama";   // v1.98: Ollama kører også lokalt
   const sites = [...document.querySelectorAll("#sites input[data-site]")];
   // v1.82: JFM-medier er ét flueben, men tæller som de sider, det dækker (20)
   const weight = (i) => i.dataset.site === "jfm" ? ((typeof UNBAIT_SITES !== "undefined" && UNBAIT_SITES.find(x => x.id === "jfm")?.matches.length) || 1) : 1;
@@ -1278,7 +1326,7 @@ async function showRestore(data) {
 }
 // v1.97: det, en sikkerhedskopi må sætte i storage.sync (nøglerne i dokumentationens afsnit 2) og værdiernes type.
 // Ukendte nøgler, forkerte typer og en udbyder, der ikke findes, springes over (resten gendannes).
-const SYNC_TYPES = { enabled: "boolean", provider: "string", openaiModel: "string", openrouterModel: "string", groqModel: "string", pool: "array",
+const SYNC_TYPES = { enabled: "boolean", provider: "string", openaiModel: "string", openrouterModel: "string", groqModel: "string", ollamaModel: "string", pool: "array",
   prompt: "string", standardPrompt: "string", maxWordsFirst: "number", maxWordsRetry: "number", sites: "array", hideCats: "array",
   hidePlus: "boolean", hideAds: "boolean", hideAdsAvisen: "boolean", hideGames: "boolean", hideWords: "string", hideMode: "string" };
 function cleanSync(sync) {
