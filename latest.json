@@ -1,5 +1,5 @@
 {
-  "version": "1.98",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.98-chrome.zip",
-  "notes": "Ny udbyder: Ollama (lokal). Kør en AI-model på din egen computer, gratis og uden nøgle – intet sendes ud. Chrome spørger om lov til at tale med Ollama, når du vælger den."
+  "version": "1.99",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.99-chrome.zip",
+  "notes": "Bedre omskrivninger fra TV 2's live-sider: AI'en får nu selve nyheden med i stedet for liveblog'ens faste beskrivelse, også på sport, underholdning og vejr."
 }
