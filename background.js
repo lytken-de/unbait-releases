@@ -1293,7 +1293,24 @@ function syncSiteScripts() {
         await chrome.scripting.unregisterContentScripts({ ids: [id] });
       }
     }
+    await syncReelAdScripts(sites, have);
   });
+}
+// v2.00: »Spring reklamer over i reels« (skipReelAds, Kun Berlingske og B.T.): reel-ads.js køres i sidens egen verden
+// fra document_start på hele domænet (siderne skifter til /video/reels/ uden genindlæsning). Kun når indstillingen og
+// unbAIt DK er slået til, og siden er valgt under Sider. Ændringen gælder fra næste indlæsning af siden
+const REEL_AD_SITES = ["bt", "berlingske"];
+async function syncReelAdScripts(sites, have) {
+  const { skipReelAds, enabled } = await chrome.storage.sync.get(["skipReelAds", "enabled"]);
+  for (const site of UNBAIT_SITES.filter(s => REEL_AD_SITES.includes(s.id))) {
+    const id = "unbait-reelads-" + site.id;
+    const want = skipReelAds === true && enabled !== false && sites.includes(site.id) && await chrome.permissions.contains({ origins: site.matches });
+    if (want && !have.has(id)) {
+      await chrome.scripting.registerContentScripts([{ id, matches: site.matches, js: ["reel-ads.js"], runAt: "document_start", world: "MAIN", allFrames: false }]);
+    } else if (!want && have.has(id)) {
+      await chrome.scripting.unregisterContentScripts({ ids: [id] });
+    }
+  }
 }
 chrome.permissions.onAdded.addListener(() => syncSiteScripts());
 chrome.permissions.onRemoved.addListener(() => syncSiteScripts());
@@ -1363,7 +1380,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "sync") {
     // Tænd/sluk: ikon og annullering (fanerne lytter selv på storage.sync)
     if (changes.enabled) { const on = changes.enabled.newValue !== false; updateIcon(on); if (!on) cancelAll(); }
-    if (changes.sites) syncSiteScripts();
+    if (changes.sites || changes.skipReelAds || changes.enabled) syncSiteScripts();
     if (changes.enabled || changes.sites) syncPauseMenus();
   }
   // v1.75: nøglerne ligger i storage.local, som indholdsscriptet ikke kan se. Ændres de, får fanerne besked,

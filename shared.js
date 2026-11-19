@@ -185,7 +185,7 @@ async function createLocalSession(system) {
 }
 
 // Skjul indhold: standardværdierne i storage.sync
-const HIDE_DEFAULTS = { hideCats: [], hidePlus: false, hideAds: false, hideAdsAvisen: false, hideGames: false, hideWords: "", hideMode: "remove" };
+const HIDE_DEFAULTS = { hideCats: [], hidePlus: false, hideAds: false, hideAdsAvisen: false, hideAdsAller: false, skipReelAds: false, hideGames: false, hideWords: "", hideMode: "remove" };
 
 // ---- Tidsgrænser, der hænger sammen på tværs af filerne (v1.97, L4) ----
 // Baggrunden: ét AI-kald højst AI_TIMEOUT_MS; køen prøver op til 4 gange ved netværksfejl/429/5xx (2, 4, 6 s pause).

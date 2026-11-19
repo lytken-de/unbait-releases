@@ -479,6 +479,8 @@ function readHide() {
     hidePlus: $("hidePlus").checked,
     hideAds: $("hideAds").checked,
     hideAdsAvisen: $("hideAdsAvisen").checked,
+    hideAdsAller: $("hideAdsAller").checked,
+    skipReelAds: $("skipReelAds").checked,
     hideGames: $("hideGames").checked,
     hideWords: $("hideWords").value.split(",").map(w => w.trim()).filter(Boolean).join(", "),
     hideMode: $("hideMode").value
@@ -489,6 +491,8 @@ function showHide(h) {
   $("hidePlus").checked = !!h.hidePlus;
   $("hideAds").checked = !!h.hideAds;
   $("hideAdsAvisen").checked = !!h.hideAdsAvisen;
+  $("hideAdsAller").checked = !!h.hideAdsAller;
+  $("skipReelAds").checked = !!h.skipReelAds;
   $("hideGames").checked = !!h.hideGames;
   $("hideWords").value = h.hideWords || "";
   $("hideMode").value = h.hideMode === "dim" ? "dim" : "remove";
@@ -787,7 +791,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const TEXT_FIELDS = ["apiKey", "prompt", "limRpm", "limRpd", "limTpm", "limTpd", "limRph", "maxFirst", "maxRetry"];
   ["prompt", "limRpm", "limRpd", "limTpm", "limTpd", "limRph", "maxFirst", "maxRetry"].forEach(id => $(id).addEventListener("input", () => changed(TYPE_PAUSE)));
   TEXT_FIELDS.forEach(id => $(id).addEventListener("change", saveNow));
-  document.querySelectorAll("#hideCats input, #hidePlus, #hideAds, #hideAdsAvisen, #hideGames, #hideMode").forEach(el => el.addEventListener("change", () => changed()));
+  document.querySelectorAll("#hideCats input, #hidePlus, #hideAds, #hideAdsAvisen, #hideAdsAller, #skipReelAds, #hideGames, #hideMode").forEach(el => el.addEventListener("change", () => changed()));
   $("hideWords").addEventListener("input", () => changed(TYPE_PAUSE));
   // Sider: en ny side gemmes først, når Chrome har svaret på spørgsmålet om lov
   document.querySelectorAll("#sites input[data-site]").forEach(el => el.addEventListener("change", async () => { await askSitePermission(el); changed(); }));
@@ -1050,7 +1054,7 @@ function hideInfo() {
   const h = readHide();
   const cats = h.hideCats.map(v => document.querySelector(`#hideCats input[value="${CSS.escape(v)}"]`)?.parentElement.textContent.trim()).filter(Boolean);
   const words = h.hideWords ? h.hideWords.split(",").map(w => w.trim()).filter(Boolean).map(w => `»${w}«`) : [];
-  const elems = [h.hidePlus && "Ekstra Bladet +", h.hideAds && "Annoncer (Ekstra Bladet)", h.hideGames && "Spil", h.hideAdsAvisen && "Annoncer (Avisen.dk)"].filter(Boolean);
+  const elems = [h.hidePlus && "Ekstra Bladet +", h.hideAds && "Annoncer (Ekstra Bladet)", h.hideGames && "Spil", h.hideAdsAvisen && "Annoncer (Avisen.dk)", h.hideAdsAller && "Annoncer (Se og Hør og Billed-Bladet)", h.skipReelAds && "Reklamer i reels (Berlingske og B.T.)"].filter(Boolean);
   return { cats, words, elems, total: cats.length + words.length + elems.length, mode: h.hideMode === "dim" ? "vises som tynd linje" : "fjernes helt" };
 }
 // v1.97 (M6): forsiden genopbygges højst én gang pr. omgang – kaldene (tastetryk, udbyderskift, forbrug) samles i én kort pause
@@ -1302,7 +1306,7 @@ async function showRestore(data) {
   const missing = [];
   for (const id of sites) { const st = UNBAIT_SITES.find(x => x.id === id); if (st && !st.builtin && !(await chrome.permissions.contains({ origins: st.matches }).catch(() => false))) missing.push(st); }
   const catName = (c) => document.querySelector(`#hideCats input[value="${CSS.escape(c)}"]`)?.closest("label")?.textContent.trim() || c;
-  const hide = [...(s.hideCats || []).map(catName), s.hidePlus && "Ekstra Bladet +", s.hideAds && "Annoncer (EB)", s.hideAdsAvisen && "Annoncer (Avisen.dk)", s.hideGames && "Spil (B.T.)"].filter(Boolean);
+  const hide = [...(s.hideCats || []).map(catName), s.hidePlus && "Ekstra Bladet +", s.hideAds && "Annoncer (EB)", s.hideAdsAvisen && "Annoncer (Avisen.dk)", s.hideAdsAller && "Annoncer (Se og Hør og Billed-Bladet)", s.skipReelAds && "Reklamer i reels (Berlingske og B.T.)", s.hideGames && "Spil (B.T.)"].filter(Boolean);
   const words = String(s.hideWords || "").split(",").map(w => w.trim()).filter(Boolean).length;
   if (words) hide.push(`${words} egne ord`);
   const pool = Array.isArray(s.pool) ? s.pool.length : 0;
@@ -1328,7 +1332,7 @@ async function showRestore(data) {
 // Ukendte nøgler, forkerte typer og en udbyder, der ikke findes, springes over (resten gendannes).
 const SYNC_TYPES = { enabled: "boolean", provider: "string", openaiModel: "string", openrouterModel: "string", groqModel: "string", ollamaModel: "string", pool: "array",
   prompt: "string", standardPrompt: "string", maxWordsFirst: "number", maxWordsRetry: "number", sites: "array", hideCats: "array",
-  hidePlus: "boolean", hideAds: "boolean", hideAdsAvisen: "boolean", hideGames: "boolean", hideWords: "string", hideMode: "string" };
+  hidePlus: "boolean", hideAds: "boolean", hideAdsAvisen: "boolean", hideAdsAller: "boolean", skipReelAds: "boolean", hideGames: "boolean", hideWords: "string", hideMode: "string" };
 function cleanSync(sync) {
   const out = {};
   for (const [k, t] of Object.entries(SYNC_TYPES)) {

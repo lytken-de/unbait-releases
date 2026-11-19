@@ -251,10 +251,11 @@
   // i slideren, og hele rækken med overskrift (Slider_container) skjules, når alle kort er skjult (v1.30).
   const BT_PODCAST = "a[class*='PodcastEpisodeTeaser_link']";
   const BT_PODCAST_ITEM = "li[class*='Slider_listItem']", BT_PODCAST_ROW = "div[class*='Slider_container']";
-  // BT's korte videoer (bt.dk/video/reels/<kode>) har hverken uddrag eller ord i adressen og sendes ikke til AI'en (v1.30)
+  // BT's korte videoer (bt.dk/video/reels/<kode>) har hverken uddrag eller ord i adressen og sendes ikke til AI'en (v1.30) –
+  // undtagen fra v2.00, når <kode> er et JW Player-id (jwReelId): så er uddraget videoens titel hos JW Player
   // v1.94: passer adressens domæne og sti? (ugyldig adresse = nej)
   const urlIs = (url, hostRe, pathRe) => { try { const u = new URL(url); return hostRe.test(u.hostname) && pathRe.test(u.pathname); } catch { return false; } };
-  const isBtReel = (url) => urlIs(url, H_BT, /^\/video\/reels\//);
+  const isBtReel = (url) => urlIs(url, H_BT, /^\/video\/reels\//) && !jwReelId(url);
   // BT's spil (bt.dk/spil/, fx "Gæt dagens ord" og "Det lille krydsord") sendes heller ikke til AI'en (v1.31)
   const isBtGame = (url) => urlIs(url, H_BT, /^\/spil(\/|$)/);
   // De nye sider (v1.37): korte videoer (…/reels/…), links til andre sider og sider, der ikke er
@@ -264,11 +265,28 @@
     try {
       const u = new URL(url);
       if (siteForHost(u.hostname)?.id !== SITE || /^e-?avis\./.test(u.hostname)) return true;   // andre sider og e-avisen
-      if (ANY_REEL.test(u.pathname) || /^\/(nyhedsbrev|nyhedsbreve|spil|abonnement|shop|horoskoper|skribent)(\/|$)/.test(u.pathname)) return true;
+      if ((ANY_REEL.test(u.pathname) && !jwReelId(url)) || /^\/(nyhedsbrev|nyhedsbreve|spil|abonnement|shop|horoskoper|skribent)(\/|$)/.test(u.pathname)) return true;
       if (SITE === "dr" && /^\/(etik-og-rettelser|om-dr)\//.test(u.pathname)) return true;          // DR's rettelser og "Om DR"
       if (SITE === "billedbladet" && /^\/billed-bladet\//.test(u.pathname)) return true;            // reklamer for bladet
       return false;
     } catch { return false; }
+  }
+  // v2.00: Se og Hørs og Billed-Bladets korte videoer (kortene linker til /video/reel/<id>, siden omdirigerer til
+  // /reels/<titel>/<id>) og B.T.'s (/video/reels/<id>) sendes til AI'en med videoens titel og beskrivelse fra JW Player
+  // som uddrag (reelContext). <id> er videoens id hos JW Player (8 tegn). Andre reels (fx Berlingske, DR) sendes ikke
+  const REEL_SITES = ["seoghoer", "billedbladet", "bt"];
+  // B.T.'s videoer har ingen beskrivelse hos JW Player (19. nov. 2026), men titlen er mere oplysende end forsidens
+  // overskrift (fx »Iskold melding« / »Mette F. lægger ikke fingre imellem: Befolkningsudskiftning?«): titlen er nok
+  const REEL_TITLE_ONLY = SITE === "bt";
+  function jwReelId(url) {
+    if (!REEL_SITES.includes(SITE)) return "";
+    try {
+      const u = new URL(url, location.href);
+      if (siteForHost(u.hostname)?.id !== SITE) return "";
+      const m = SITE === "bt" ? u.pathname.match(/^\/video\/reels\/([A-Za-z0-9]{8})\/?$/)
+        : u.pathname.match(/^\/(?:video\/reels?|reels?(?:\/[^/]+)?)\/([A-Za-z0-9]{8})\/?$/);
+      return m ? m[1] : "";
+    } catch { return ""; }
   }
   // v1.79: TV 2's korte videoer (fx tv2.dk/penge/reel/…) har hverken uddrag eller brugbar tekst og sendes ikke til AI'en
   const isTv2Reel = (url) => urlIs(url, /(^|\.)tv2\.dk$/, /(^|\/)reels?\//);
@@ -278,11 +296,20 @@
   const AVISEN_ADS = ".Category-advertorial, .Category-forbrugerguides";
   // v1.79: en overskrift uden link til en artikel (fx TV 2's »Mest sete på tv2.dk« og SEO-boksens »Få overblik over …«)
   // er ikke en nyhed og sendes ikke til AI'en
-  const noAIEl = (el) => { const u = findArticleUrl(el); return !u || noAI(u) || (SITE === "avisen" && !!el.closest(AVISEN_ADS)); };
+  // v2.00: annoncer på Se og Hør og Billed-Bladet: kortet har mærket »Annonce« (.dre-item__pretitle), eller linket går til
+  // /annoncer/ (linket kan også ligge under fx /nyheder/, så mærket er det sikre). De sendes aldrig til AI'en
+  const ALLER_AD_CARD = ".dre-item, article";
+  function isAllerAd(el, url = findArticleUrl(el)) {
+    if (SITE !== "seoghoer" && SITE !== "billedbladet") return false;
+    if (url && urlIs(url, SITE === "seoghoer" ? H_SH : H_BB, /^\/annoncer(\/|$)/)) return true;
+    const card = el.closest?.(ALLER_AD_CARD);
+    return !!card && [...card.querySelectorAll(".dre-item__pretitle")].some(p => p.closest(ALLER_AD_CARD) === card && /^annonce$/i.test(p.textContent.trim()));
+  }
+  const noAIEl = (el) => { const u = findArticleUrl(el); return !u || noAI(u) || (SITE === "avisen" && !!el.closest(AVISEN_ADS)) || isAllerAd(el, u); };
   // Avisen.dk's boks "Partnerlinks" har ingen overskrifter; den skjules for sig (v1.41)
   const AVISEN_PARTNER = ".page_SponsoredLinksFP";
 
-  let hideCfg = { cats: [], plus: false, ads: false, adsAvisen: false, games: false, words: [], mode: "remove" };
+  let hideCfg = { cats: [], plus: false, ads: false, adsAvisen: false, adsAller: false, games: false, words: [], mode: "remove" };
   const hiddenRoots = new Map();   // kort -> pladsholder (eller null)
   const hiddenGroups = new Set();  // EB-grupper og BT's podcast-række, hvor alle kort er skjult
   const revealed = new WeakSet();  // kort, brugeren selv har klikket frem
@@ -302,11 +329,11 @@
   async function loadHideCfg() {
     try {
       const s = await chrome.storage.sync.get(HIDE_DEFAULTS);   // standardværdierne står i shared.js (v1.94)
-      hideCfg = { cats: Array.isArray(s.hideCats) ? s.hideCats : [], plus: !!s.hidePlus, ads: !!s.hideAds, adsAvisen: !!s.hideAdsAvisen, games: !!s.hideGames,
+      hideCfg = { cats: Array.isArray(s.hideCats) ? s.hideCats : [], plus: !!s.hidePlus, ads: !!s.hideAds, adsAvisen: !!s.hideAdsAvisen, adsAller: !!s.hideAdsAller, games: !!s.hideGames,
         words: parseWords(s.hideWords), mode: s.hideMode === "dim" ? "dim" : "remove" };
     } catch {}
   }
-  const hideActive = () => hideCfg.cats.length > 0 || hideCfg.plus || hideCfg.ads || hideCfg.adsAvisen || hideCfg.games || hideCfg.words.length > 0;
+  const hideActive = () => hideCfg.cats.length > 0 || hideCfg.plus || hideCfg.ads || hideCfg.adsAvisen || hideCfg.adsAller || hideCfg.games || hideCfg.words.length > 0;
 
   function cardRoot(el) {
     if (SITE === "bt" && el.matches(BT_PODCAST)) return el.closest(BT_PODCAST_ITEM) || el;
@@ -335,6 +362,8 @@
     if (hideCfg.ads && SITE === "eb" && url && urlIs(url, H_EB, /^\/kommerciel\//)) return "Annonce";
     // Annoncer på Avisen.dk: advertorials og hele boksen "Forbrugerguides" (v1.41)
     if (hideCfg.adsAvisen && SITE === "avisen" && root.closest?.(AVISEN_ADS)) return "Annonce";
+    // Annoncer på Se og Hør og Billed-Bladet (v2.00)
+    if (hideCfg.adsAller && isAllerAd(el, url)) return "Annonce";
     if (SITE === "avisen" && hideCfg.cats.length) {
       const cls = [...(root.classList || [])].find(c => c.startsWith("Category-"))?.slice(9).toLowerCase();
       for (const c of hideCfg.cats) if (cls && (AVISEN_CATS[c] || []).includes(cls)) return HIDE_LABELS[c];
@@ -864,6 +893,26 @@
     return "";
   }
 
+  // v2.00: en reel på Se og Hør og Billed-Bladet har ingen tekst i sidens HTML (siden bygges i browseren). Titel og
+  // beskrivelse hentes fra JW Players åbne feed (Access-Control-Allow-Origin: *). Krediteringen sidst i beskrivelsen
+  // (»Journalist: … / Foto: …«) tages ikke med. Uden beskrivelse: intet uddrag, og reelen sendes ikke til AI'en (runJob).
+  // På B.T. er titlen alene nok (REEL_TITLE_ONLY); uden titel sendes reelen heller ikke
+  const JW_MEDIA = "https://cdn.jwplayer.com/v2/media/";
+  const REEL_CREDIT = /^\s*(journalist|journalister|foto|fotos|fotograf|redigering|klip|kamera|producer|produktion|tilrettelæggelse|video|vært|værter|lyd)\s*:/i;
+  function reelText(media, id) {
+    const it = media?.playlist?.[0];
+    if (!it || it.mediaid !== id) return "";
+    const lines = String(it.description || "").split(/\r?\n/);
+    const cut = lines.findIndex(l => REEL_CREDIT.test(l));
+    const desc = (cut < 0 ? lines : lines.slice(0, cut)).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean).join(" ");
+    const title = String(it.title || media.title || "").replace(/\s+/g, " ").trim();
+    if (!desc && !(REEL_TITLE_ONLY && title)) return "";
+    return [title, desc].filter(Boolean).join("\n").slice(0, EXCERPT_MAX);
+  }
+  async function reelContext(id) {
+    return reelText(await fetchJson(JW_MEDIA + encodeURIComponent(id), FEED_TIMEOUT_MS), id);
+  }
+
   // TV 2's live-sider (v1.99): uddraget er altid et bestemt indlæg eller liveblog'ens sammendrag – aldrig liveblog'ens faste
   // beskrivelse (og:description, fx »TV 2 serverer et kort og præcist overblik …«), som TV 2 også giver på ?entry=-sider.
   // Gælder live-sider på alle *.tv2.dk (nyheder., sport., underholdning., vejr. …)
@@ -941,6 +990,8 @@
     if (!url) return "";
     const pod = podcastContext(url);
     if (pod !== null) return pod;
+    const reel = jwReelId(url);
+    if (reel) return await reelContext(reel);   // v2.00
     const lcPost = liveCenterPostId(url);
     if (lcPost) {
       try {
@@ -1112,7 +1163,8 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     let res;
     try {
       const context = await fetchContext(el, c);
-      res = await requestRewrite(c, context, crypto.randomUUID(), true);
+      // v2.00: en reel uden beskrivelse sendes ikke til AI'en
+      res = !context && jwReelId(c.url) ? null : await requestRewrite(c, context, crypto.randomUUID(), true);
     } catch (e) { res = { error: e.message || String(e) }; }
     flushPending();
     if (!enabled) return;
@@ -1179,6 +1231,9 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     try {
       const context = await fetchContext(el, c, () => alive(job));
       if (!alive(job)) return;
+      // v2.00: en reel på Se og Hør/Billed-Bladet uden beskrivelse hos JW Player sendes ikke til AI'en. En omskrivning
+      // fra cachen (genkontrol efter 2 timer) bliver stående, så en fejl hos JW Player ikke fjerner den
+      if (!context && jwReelId(c.url)) { c.jobId = null; if (!c.rewritten) el.dataset.unbait = "skipped"; return; }
       // v1.77: står et af brugerens ord i uddraget, skjules kortet nu, og intet sendes til AI'en
       if (context && hideActive() && hideCfg.words.length) {
         const root = cardRoot(el);

@@ -1,5 +1,5 @@
 {
-  "version": "1.99",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v1.99-chrome.zip",
-  "notes": "Bedre omskrivninger fra TV 2's live-sider: AI'en får nu selve nyheden med i stedet for liveblog'ens faste beskrivelse, også på sport, underholdning og vejr."
+  "version": "2.00",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.00-chrome.zip",
+  "notes": "Korte videoer (reels) på Se og Hør, Billed-Bladet og B.T. omskrives nu. Annoncer på Se og Hør og Billed-Bladet kan skjules, og ny indstilling springer reklamerne over i reels på Berlingske og B.T."
 }
