@@ -703,9 +703,8 @@
     "[class*='article__body']", "[class*='bodytext']", "[class*='article-content']", "article"];
   const NOT_BODY = "aside, nav, footer, figure, figcaption, [class*='related'], [class*='relateret'], [class*='teaser'], [class*='Teaser'], [class*='recommend'], [class*='anbefal'], [class*='list'], [class*='paywall'], [class*='newsletter'], [class*='nyhedsbrev']";
 
-  // descOnly: kun sidens beskrivelse (live-sider, hvor brødteksten er liveindlæg) (v1.23)
   // finalUrl (v1.67): adressen, serveren omdirigerede til (fx B.T.: …/fyrer-123 -> …/nu-er-det-besluttet-fyrer-123)
-  function extractExcerpt(html, articleUrl, descOnly = false, finalUrl = "") {
+  function extractExcerpt(html, articleUrl, finalUrl = "") {
     const doc = new DOMParser().parseFromString(html, "text/html");
     // Siden skal være den artikel, vi bad om (ikke fx en login- eller forside efter omdirigering)
     const canonLink = doc.querySelector("link[rel='canonical']")?.href;
@@ -725,20 +724,7 @@
       // TV 2's regionale artikler: canonical peger på et andet domæne (fx tvsyd.dk), men
       // og:url passer præcis med linket. Så er det den rigtige artikel (v1.23).
       const host = (u) => { try { return new URL(u, location.href).hostname.replace(/^www\./, ""); } catch { return ""; } };
-      // TV 2's live-sider: linket peger på et bestemt indlæg (?entry=…), og siden svarer med
-      // indlæggets egen adresse under samme liveblog: …/<liveblog>/<indlæg>?entry=… (v1.26)
-      const sameEntry = (() => {
-        try {
-          const a = new URL(articleUrl, location.href), c = new URL(canonical, location.href);
-          const e = a.searchParams.get("entry");
-          if (!e || c.searchParams.get("entry") !== e) return false;
-          if (a.hostname !== "nyheder.tv2.dk" || c.hostname !== a.hostname || !/^\/live\//.test(a.pathname)) return false;
-          const ap = a.pathname.replace(/\/+$/, "");
-          return c.pathname === ap || c.pathname.startsWith(ap + "/");
-        } catch { return false; }
-      })();
-      if (sameEntry) { /* godkendt */ }
-      else if (canonLink && ogUrl && samePage(ogUrl, articleUrl) && host(canonLink) !== host(articleUrl)) canonical = ogUrl;
+      if (canonLink && ogUrl && samePage(ogUrl, articleUrl) && host(canonLink) !== host(articleUrl)) canonical = ogUrl;
       else return "";
     }
 
@@ -776,7 +762,7 @@
     const anonymous = articles.filter(a => !idOf(a));
     const chosen = matching.length ? matching
       : (canonical && articles.length === 1 && anonymous.length === 1 ? anonymous : []);
-    chosen.forEach(a => { add(a.description); if (a.articleBody && !descOnly) add(String(a.articleBody).slice(0, BODY_MAX)); });
+    chosen.forEach(a => { add(a.description); if (a.articleBody) add(String(a.articleBody).slice(0, BODY_MAX)); });
 
     // 2) Sidens beskrivelse – kun når siden bekræftet er artiklen
     if (canonical) add(doc.querySelector('meta[property="og:description"]')?.content);
@@ -784,7 +770,7 @@
     if (canonical) add(doc.querySelector('meta[name="description"]')?.content);
 
     // 3) Brødtekst fra artikelens egen tekstblok – ikke relaterede bokse
-    if (!descOnly && parts.join(" ").length < ENOUGH) {
+    if (parts.join(" ").length < ENOUGH) {
       let body = null;
       for (const sel of BODY_SELECTORS[SITE] || GENERIC_BODY) { body = doc.querySelector(sel); if (body) break; }
       body?.querySelectorAll("p").forEach(p => {
@@ -878,36 +864,69 @@
     return "";
   }
 
-  // v1.68: TV 2's liveblogs uden ?entry= (fx forsidens kort, der linker til hele »Kort nyt«): indlægget findes ud fra
-  // overskriften. Store og små bogstaver, mellemrum, anførselstegn og afsluttende tegn tæller ikke. Findes intet indlæg, bruges intet
-  // uddrag – liveblog'ens generelle beskrivelse (»TV 2 serverer et kort og præcist overblik …«) bruges ikke.
-  // Sammenligningen (headlineKey) står i shared.js (v1.94)
+  // TV 2's live-sider (v1.99): uddraget er altid et bestemt indlæg eller liveblog'ens sammendrag – aldrig liveblog'ens faste
+  // beskrivelse (og:description, fx »TV 2 serverer et kort og præcist overblik …«), som TV 2 også giver på ?entry=-sider.
+  // Gælder live-sider på alle *.tv2.dk (nyheder., sport., underholdning., vejr. …)
+  const TV2_LIVE = /^https?:\/\/(?!play\.)([a-z0-9-]+\.)?tv2\.dk\/live\//i;
+  const tv2Doc = (html) => new DOMParser().parseFromString(html, "text/html");
+  const tv2Canonical = (doc) => doc.querySelector("link[rel='canonical']")?.href || doc.querySelector("meta[property='og:url']")?.content || "";
+  // Et indlægs tekst: afsnittene i indlæggets tekstblok, højst 1.500 tegn. Uden tekst (fx kun en video): intet uddrag
+  function tv2PostText(post) {
+    const body = post.querySelector(".tc_post__body__post .tc_richcontent");
+    if (!body) return "";
+    const ps = [...body.querySelectorAll("p, li:not(:has(p))")].map(p => p.textContent.replace(/\s+/g, " ").trim()).filter(Boolean);
+    return (ps.length ? ps.join("\n") : body.textContent.replace(/\s+/g, " ").trim()).slice(0, EXCERPT_MAX);
+  }
+
+  // v1.68: liveblogs uden ?entry= (fx forsidens kort, der linker til hele »Kort nyt«): indlægget findes ud fra
+  // overskriften. Store og små bogstaver, mellemrum, anførselstegn og afsluttende tegn tæller ikke. Sammenligningen
+  // (headlineKey) står i shared.js (v1.94)
   function tv2LivePost(html, articleUrl, headline) {
     const want = headlineKey(headline);
     if (!want) return "";
-    const doc = new DOMParser().parseFromString(html, "text/html");
+    const doc = tv2Doc(html);
     // Siden skal være den liveblog, kortet linker til
-    const canonical = doc.querySelector("link[rel='canonical']")?.href || doc.querySelector("meta[property='og:url']")?.content;
+    const canonical = tv2Canonical(doc);
     if (!canonical || !samePage(canonical, articleUrl)) return "";
     for (const post of doc.querySelectorAll("article.tc_post")) {
       const title = post.querySelector(".tc_post__body__title");
-      if (!title || headlineKey(title.textContent) !== want) continue;
-      const body = post.querySelector(".tc_post__body__post .tc_richcontent");
-      if (!body) return "";
-      const ps = [...body.querySelectorAll("p")].map(p => p.textContent.replace(/\s+/g, " ").trim()).filter(Boolean);
-      return (ps.length ? ps.join("\n") : body.textContent.replace(/\s+/g, " ").trim()).slice(0, 1500);
+      if (title && headlineKey(title.textContent) === want) return tv2PostText(post);
     }
-    // v1.79: en selvstændig live-artikel (fx nyheder.tv2.dk/live/udland/2026-11-02-frysere-…) er selve historien: er sidens
-    // egen titel den samme som kortets overskrift, bruges sidens beskrivelse. »Kort nyt« har titlen »Kort nyt«, så den
-    // generelle tekst bruges stadig aldrig
+    // v1.79: er liveblog'ens egen titel (og:title, <title> eller JSON-LD headline) kortets overskrift, er kortet hele
+    // liveblog'en (en selvstændig live-artikel, eller en liveblog, hvis rubrik TV 2 skifter undervejs). v1.99: så bruges
+    // liveblog'ens sammendrag (»Hvad sker der? …«) – ikke og:description, som på løbende liveblogs er den faste tekst
+    // (»Følg den seneste udvikling fra … finansielle markeder her.«). »Kort nyt« har titlen »Kort nyt«
     const titles = [doc.querySelector("meta[property='og:title']")?.content || "", doc.querySelector("title")?.textContent || ""];
+    const ld = [];
     for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
-      try { const j = JSON.parse(s.textContent); for (const x of [].concat(j)) if (x && x.headline) titles.push(String(x.headline)); } catch {}
+      try { const j = JSON.parse(s.textContent); for (const x of [].concat(j)) if (x && x.headline) { titles.push(String(x.headline)); ld.push(x); } } catch {}
     }
     const same = titles.some(t => headlineKey(t) === want || headlineKey(t.replace(/\s*[|–-]\s*TV ?2.*$/i, "")) === want);
     if (!same) return "";
-    const desc = doc.querySelector("meta[property='og:description']")?.content || doc.querySelector("meta[name='description']")?.content || "";
-    return desc.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500);
+    const lines = (el) => [...el.querySelectorAll("p, li:not(:has(p))")].map(p => p.textContent.replace(/\s+/g, " ").trim()).filter(Boolean);
+    const summary = doc.querySelector(".tc_liveblog__body__summary");
+    let out = summary ? lines(summary) : [];
+    if (!out.length) {
+      // Sammendraget i de strukturerede data (HTML i description)
+      const d = ld.map(x => x.description).find(x => typeof x === "string" && x.trim());
+      if (d) { const b = tv2Doc(d).body; out = lines(b); if (!out.length) out = [b.textContent.replace(/\s+/g, " ").trim()]; }
+    }
+    return out.filter(Boolean).join("\n").slice(0, EXCERPT_MAX);
+  }
+
+  // v1.99: liveindlæg med ?entry=<id>: TV 2 svarer med indlæggets egen adresse under samme liveblog
+  // (…/<liveblog>/<indlæg>?entry=<id>), og indlægget står i siden som article.tc_post med id = <id> (v1.26: kun beskrivelsen)
+  function tv2EntryPost(html, articleUrl) {
+    const doc = tv2Doc(html);
+    let entry = "";
+    try {
+      const a = new URL(articleUrl, location.href), c = new URL(tv2Canonical(doc), location.href);
+      entry = a.searchParams.get("entry") || "";
+      const ap = a.pathname.replace(/\/+$/, "");
+      if (!entry || c.searchParams.get("entry") !== entry || c.hostname !== a.hostname || !(c.pathname === ap || c.pathname.startsWith(ap + "/"))) return "";
+    } catch { return ""; }
+    const post = [...doc.querySelectorAll("article.tc_post")].find(p => p.id === entry);
+    return post ? tv2PostText(post) : "";
   }
 
   // v1.94: artikel på samme domæne som siden hentes direkte (højst ARTICLE_TIMEOUT_MS, højst ARTICLE_MAX_CHARS tegn);
@@ -930,10 +949,9 @@
         return await liveCenterContext(html, lcPost);   // ingen generisk liveblog-tekst som før
       } catch { return ""; }
     }
-    // TV 2's live-sider (nyheder.tv2.dk/live/…) hentes, men kun beskrivelsen bruges (v1.23)
-    const tv2Live = /^https?:\/\/nyheder\.tv2\.dk\/live\//i.test(url);
-    // v1.68: uden ?entry= er linket hele liveblog'en – så findes indlægget ud fra overskriften
-    const tv2Whole = tv2Live && (() => { try { return !new URL(url).searchParams.has("entry"); } catch { return false; } })();
+    // TV 2's live-sider på alle *.tv2.dk: et bestemt indlæg (?entry=) eller hele liveblog'en (v1.68, v1.99)
+    const tv2Live = TV2_LIVE.test(url);
+    const tv2Entry = tv2Live && (() => { try { return new URL(url).searchParams.has("entry"); } catch { return false; } })();
     // v1.81: kun hele led i stien (/tv/, /video, /live?…); før ramte \b også fx /tv-2-erkender-fejl…
     if (!tv2Live && /\/(live|video|play|tv)(\/|$|[?#])|play\.tv2\.dk/i.test(url)) return "";
     try {
@@ -945,7 +963,7 @@
         html = r?.html || ""; finalUrl = r?.finalUrl || "";
       }
       if (!html) return "";
-      return tv2Whole ? tv2LivePost(html, url, headline) : extractExcerpt(html, url, tv2Live, finalUrl);
+      return tv2Entry ? tv2EntryPost(html, url) : tv2Live ? tv2LivePost(html, url, headline) : extractExcerpt(html, url, finalUrl);
     } catch { return ""; }
   }
 
