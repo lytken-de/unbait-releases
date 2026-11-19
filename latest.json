@@ -1,5 +1,5 @@
 {
-  "version": "2.00",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.00-chrome.zip",
-  "notes": "Korte videoer (reels) på Se og Hør, Billed-Bladet og B.T. omskrives nu. Annoncer på Se og Hør og Billed-Bladet kan skjules, og ny indstilling springer reklamerne over i reels på Berlingske og B.T."
+  "version": "2.01",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.01-chrome.zip",
+  "notes": "Reklamerne i reels på Berlingske og B.T. springes nu over næsten med det samme, også når siden starter med en reklame, og når man swiper hurtigt."
 }

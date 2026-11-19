@@ -1,4 +1,4 @@
-// unbAIt DK v2.00: »Spring reklamer over i reels« (Kun Berlingske og B.T.; indstillingen skipReelAds).
+// unbAIt DK v2.00 (rettet i v2.01): »Spring reklamer over i reels« (Kun Berlingske og B.T.; indstillingen skipReelAds).
 // Kører i sidens egen verden (world MAIN) fra document_start på berlingske.dk og bt.dk og registreres kun, når
 // indstillingen er slået til (syncReelAdScripts i background.js).
 //
@@ -32,14 +32,31 @@
     ViewMode: { NORMAL: "normal", FULLSCREEN: "fullscreen" }
   };
   // Svaret »ingen reklame« (preroll: null): afspilleren opgiver pladsen uden en fejl i konsollen (et svar med error blev
-  // til en uhåndteret fejl)
-  const BIDDING = { isReady: true, requestTagAsync: () => Promise.resolve({ preroll: null }) };
+  // til en uhåndteret fejl).
+  // v2.01: sidens eget reklamescript skriver sin egen requestTagAsync ind i objektet (også med adblocker). Den svarer
+  // aldrig, så afspilleren opgav først efter 3 sekunder. Felterne er derfor låst: det, siden skriver, ignoreres her og
+  // gemmes i pageBidding, som siden får uden for reels
+  // v2.01: svaret venter, til afspilleren har låst på reklamefeltet (data-scroll-locked="true"), dog højst NO_AD_WAIT_MS.
+  // Afspilleren låser selv op og scroller videre, når en reklame fejler, mens feltet er aktivt. Fejler den i de første
+  // millisekunder, før feltet er aktivt, kan afspilleren låse bagefter uden at låse op igen (siden starter med en reklame)
+  const NO_AD_WAIT_MS = 1500, POLL_MS = 50;
+  const noAd = () => new Promise((resolve) => {
+    const t0 = performance.now();
+    const tick = () => document.querySelector('[data-scroll-locked="true"]') || performance.now() - t0 >= NO_AD_WAIT_MS
+      ? resolve({ preroll: null }) : setTimeout(tick, POLL_MS);
+    tick();
+  });
+  let pageBidding;
+  const BIDDING = {};
+  for (const [k, v] of [["isReady", true], ["requestTagAsync", noAd]]) {
+    Object.defineProperty(BIDDING, k, { enumerable: true, get: () => v, set: (x) => { (pageBidding ||= {})[k] = x; } });
+  }
 
   // videoBidding: på reel-siderne stand-in'et; ellers sidens eget (gemmes, når siden sætter det)
   let realBidding = window.videoBidding;
   Object.defineProperty(window, "videoBidding", {
     configurable: true,
-    get: () => onReels() ? BIDDING : realBidding,
+    get: () => onReels() ? BIDDING : (realBidding ?? pageBidding),
     set: (v) => { if (v !== BIDDING) realBidding = v; }
   });
 
