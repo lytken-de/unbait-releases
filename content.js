@@ -156,6 +156,9 @@
     return (readText(el) || el.textContent || "")
       .replace(JFM ? /\u00AD/g : /(?!)/g, "")   // v1.80: JFM's bløde bindestreger (»Stel\u00ADla«) er ikke en del af teksten
       .replace(/(\p{L})-[ \t]*\n\s*(?!(?:og|eller)(?![\p{L}]))(?=\p{L})/gu, "$1-")
+      // v2.02: en adresse er aldrig en del af overskriften (EB's videoliste har fx videofilens adresse i titlen:
+      // »FREDAG Hund går verden rundt! https://cdn.jwplayer.com/videos/…mp4«)
+      .replace(/\bhttps?:\/\/\S+/gi, " ")
       .replace(/\s+/g, " ").trim();
   }
 
@@ -230,12 +233,22 @@
   // EB's karruseller ("Nyeste fra Bold", "Populært i Ekstra Bladet+" …) har kort af typen a.list-item.
   // De skjules som andre kort, men omskrives ikke (v1.18).
   const CAROUSEL_ITEM = ".horizontal-container a.list-item";
+  // v2.02: EB's sektionsliste på fx /nyheder/ (Svelte, bygges i browseren; »Hent flere« henter flere): kategori i
+  // p.article-section og overskrift i h2.article-title. Videolisten i højre kolonne på artikelsiderne: a.video-card
+  // med titlen i .video-clip-title (linker til almindelige artikler)
+  const EB_LIST_ITEM = ".section-list-grid a.list-item", EB_VIDEO_LIST = "#videoListRightcolumn", EB_VIDEO_CARD = EB_VIDEO_LIST + " a.video-card";
   // DR's blok "Mere fra dr.dk" på artikelsiderne (v1.76)
   const DR_MORE = "#hydra-more-news", DR_MORE_CELL = "#hydra-more-news .dre-grid-layout-cell", DR_MORE_CARD = "#hydra-more-news .dre-article-teaser";
-  const CARD_SEL = { eb: [".dre-item", CAROUSEL_ITEM], bt: ["[class*='TeaserClickArea_container']", "[class*='Teaser_container']"], tv2: [".tc_teaser"],
+  // v2.02: Se og Hørs og Billed-Bladets video-karruseller (»Fik du set?«, »Korte videoer«, »KORTE KLIP« …) bygges af
+  // Allers video-script (cdn.video.aller.com) efter indlæsningen: .aller-video-container[data-variant=carousel] med
+  // .swiper-slide > a[href=/reels/<titel>/<id>] > picture > div > span (titlen). Klassenavnene (sc-…) skifter, så kun
+  // de faste dele bruges. Hvert kort skjules for sig; hele karrusellen, når alle dens kort er skjult (updateGroups)
+  const ALLER_CAROUSEL = '.aller-video-container[data-variant="carousel"]', ALLER_SLIDE = ALLER_CAROUSEL + " .swiper-slide";
+  const ALLER_SLIDE_TITLE = ALLER_SLIDE + ' a[href*="/reels/"] picture span';
+  const CARD_SEL = { eb: [EB_LIST_ITEM, EB_VIDEO_CARD, ".dre-item", CAROUSEL_ITEM], bt: ["[class*='TeaserClickArea_container']", "[class*='Teaser_container']"], tv2: [".tc_teaser"],
     // v1.37
     // Se og Hør: de små kort på undersiderne (fx /kendte, /nyheder/dine-penge) skjules med hele <article> (v1.48)
-    seoghoer: [".dre-item", "article"], billedbladet: [".dre-item"], berlingske: ["[class*='TeaserClickArea_container']", "[class*='Teaser_container']"],
+    seoghoer: [ALLER_SLIDE, ".dre-item", "article"], billedbladet: [ALLER_SLIDE, ".dre-item"], berlingske: ["[class*='TeaserClickArea_container']", "[class*='Teaser_container']"],
     // DR: kort i en karrusel ("Seneste nyt") skjules med hele karrusel-punktet, ellers bliver punktets
     // udregnede bredde stående som et hul. Tjekkes først, så en hel sektion aldrig skjules (v1.40)
     // v1.76: kortene i "… lige nu"/"Seneste om …" (#hydra-more-news) skjules med hele gitter-cellen (billede og tekst)
@@ -476,11 +489,17 @@
         const g = w && w.querySelectorAll(".horizontal-container").length === 1 ? w : hc;
         groups.push([g, hc.querySelectorAll("a.list-item")]);
       });
+      // v2.02: hele videolisten i højre kolonne, når alle dens kort er skjult
+      document.querySelectorAll(EB_VIDEO_LIST).forEach(v => groups.push([v, v.querySelectorAll("a.video-card")]));
     }
     if (SITE === "bt") {
       // BT's podcast-række: hele rækken med overskriften "PODCAST", når alle podcast-kort er skjult (v1.30)
       const rows = new Set([...document.querySelectorAll(BT_PODCAST)].map(a => a.closest(BT_PODCAST_ROW)).filter(Boolean));
       rows.forEach(r => groups.push([r, [...r.querySelectorAll(BT_PODCAST)].map(cardRoot)]));
+    }
+    if (SITE === "seoghoer" || SITE === "billedbladet") {
+      // v2.02: hele video-karrusellen (med overskriften, fx »Fik du set?«), når alle dens kort er skjult
+      document.querySelectorAll(ALLER_CAROUSEL).forEach(c => groups.push([c.closest(".dre-item") || c, c.querySelectorAll(".swiper-slide")]));
     }
     if (SITE === "dr") {
       // DR: hele blokken "… lige nu"/"Seneste om …" med overskrift, når alle dens kort er skjult (v1.76)
@@ -568,6 +587,10 @@
       span.appendChild(inner);
     } else {
       span.append(head, tail);
+      // v2.02: er overskriften selv et inline-element med baggrund (fx titlen i Se og Hørs video-karruseller: gul
+      // baggrund på et <span>), tegnes baggrunden kun om inline-indhold. En blok indeni gav tynde gule streger og tekst
+      // uden baggrund (brugerens fund 20. nov. 2026) – så her indsættes teksten inline
+      if (hasBg && cs.display === "inline") span.style.display = "inline";
     }
     el.replaceChildren(span);
     c.span = span;
@@ -614,7 +637,10 @@
       ".unbait-ph{display:block !important;font:12px/1.4 system-ui,sans-serif !important;color:#6b7280 !important;background:#f3f4f6 !important;" +
       "border-radius:4px !important;padding:3px 8px !important;margin:2px 0 !important;cursor:pointer !important;text-align:left !important;" +
       "text-transform:none !important;letter-spacing:normal !important;font-style:normal !important;font-weight:400 !important}" +
-      ".unbait-ph:focus-visible{outline:2px solid #2563eb !important}";
+      ".unbait-ph:focus-visible{outline:2px solid #2563eb !important}" +
+      // v2.02: titlerne i EB's videoliste (højre kolonne) får 3 linjer i stedet for 2 (brugerens ønske 20. nov. 2026,
+      // preview godkendt): 14 px skrift og 18 px linjer, så 3 linjer og datoen kan være i kortets 81 px (billedets højde)
+      (SITE === "eb" ? "#videoListRightcolumn a.video-card .video-clip-title{-webkit-line-clamp:3 !important;line-clamp:3 !important}" : "");
     (document.head || document.documentElement).appendChild(st);
   }
 
@@ -835,6 +861,7 @@
   // Se og Hør og Billed-Bladet, der er bygget på samme måde. "Lige nu" er ikke et mærkat.
   function cardLabel(el) {
     if (!DRE_SITE) return "";
+    if (SITE === "eb" && el.closest(EB_LIST_ITEM + ", " + EB_VIDEO_CARD)) return "";   // v2.02: kategorien er ikke et mærkat
     const h = el.closest(".dre-item")?.querySelector(".dre-item__header .dre-repeat");
     const t = (h?.textContent || "").replace(/\s+/g, " ").trim();
     if (/^lige nu$/i.test(t)) return "";
@@ -898,7 +925,9 @@
   // (»Journalist: … / Foto: …«) tages ikke med. Uden beskrivelse: intet uddrag, og reelen sendes ikke til AI'en (runJob).
   // På B.T. er titlen alene nok (REEL_TITLE_ONLY); uden titel sendes reelen heller ikke
   const JW_MEDIA = "https://cdn.jwplayer.com/v2/media/";
-  const REEL_CREDIT = /^\s*(journalist|journalister|foto|fotos|fotograf|redigering|klip|kamera|producer|produktion|tilrettelæggelse|video|vært|værter|lyd)\s*:/i;
+  // v2.02: også stavefejl og flere roller før kolon, set i rigtige beskrivelser (»Jounalist: …«, »Journalist & video: …«,
+  // »Journalist/Video: …«)
+  const REEL_CREDIT = /^\s*(jou?r?n?alist\w*|foto\w*|redigering|klip|kamera|producer|produktion|tilrettelæggelse|video|vært\w*|lyd)\b[^:\n]{0,40}:/i;
   function reelText(media, id) {
     const it = media?.playlist?.[0];
     if (!it || it.mediaid !== id) return "";
@@ -1305,7 +1334,11 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
   function selector() {
     // Se og Hørs undersider (/kendte, /nyheder/viralt …) har små kort med billede, mærkat og overskrift:
     // <article><a href><…><h2>. Brugerens sider 24. okt. 2026 (v1.48)
-    if (SITE === "seoghoer") return ".dre-item__title, article > a[href] h2";
+    // v2.02: også titlerne i Se og Hørs og Billed-Bladets video-karruseller (ALLER_SLIDE_TITLE)
+    if (SITE === "seoghoer") return ".dre-item__title, article > a[href] h2, " + ALLER_SLIDE_TITLE;
+    if (SITE === "billedbladet") return ".dre-item__title, " + ALLER_SLIDE_TITLE;
+    // v2.02: også EB's sektionsliste (/nyheder/ …) og videolisten på artikelsiderne
+    if (SITE === "eb") return ".dre-item__title, " + EB_LIST_ITEM + " h2.article-title, " + EB_VIDEO_CARD + " .video-clip-title";
     if (DRE_SITE) return ".dre-item__title";
     if (TEASER_SITE) return 'a[class*="TeaserLink"] h1, a[class*="TeaserLink"] h2, a[class*="TeaserLink"] h3, a[class*="TeaserLink"] [class*="itle"], a[class*="TeaserLink"]';
     // De nye sider (v1.37), fundet på brugerens forsider 22. okt. 2026
