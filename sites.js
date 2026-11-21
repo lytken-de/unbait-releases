@@ -1,8 +1,10 @@
 "use strict";
-// Siderne, unbAIt DK kan virke på (v1.37). Bruges af baggrunden, indstillingerne og indholdsscriptet.
+// Siderne, unbAIt DK kan virke på. Bruges af baggrunden, indstillingerne og indholdsscriptet.
 // builtin: Ekstra Bladet, B.T. og TV 2 har adgang fra installationen. De andre sider beder Chrome
 // om lov første gang, brugeren sætter flueben (optional_host_permissions), og indholdsscriptet
 // registreres først derefter (chrome.scripting.registerContentScripts).
+// Siderne skal også stå i manifest.json (content_scripts, host_permissions/optional_host_permissions og
+// web_accessible_resources); tests/shared.js S35–S39 fejler, hvis de ikke passer.
 const UNBAIT_SITES = [
   { id: "eb", name: "Ekstra Bladet", group: "tabloid", matches: ["*://*.ekstrabladet.dk/*", "*://*.eb.dk/*"], builtin: true },
   { id: "bt", name: "B.T.", group: "tabloid", matches: ["*://*.bt.dk/*"], builtin: true },
@@ -12,14 +14,14 @@ const UNBAIT_SITES = [
   { id: "dr", name: "DR", group: "nyheder", matches: ["*://*.dr.dk/*"] },
   { id: "avisen", name: "Avisen.dk", group: "nyheder", matches: ["*://*.avisen.dk/*"] },
   { id: "nyheder24", name: "Nyheder24", group: "nyheder", matches: ["*://*.nyheder24.dk/*"] },
-  // v1.89 (v1.88 genskabt): Y.dk – kortene er <article> med et link over hele kortet og overskriften i h1/h2/h3.
-  // Skjul indhold: kun egne ord gælder, emnerne ikke (brugerens valg 6. nov. 2026, som JFM-medier)
+  // Y.dk: kortene er <article> med et link over hele kortet og overskriften i h1/h2/h3.
+  // Skjul indhold: kun egne ord gælder, emnerne ikke (bevidst valg, som JFM-medier)
   { id: "y", name: "Y.dk", group: "nyheder", matches: ["*://*.y.dk/*"] },
   { id: "politiken", name: "Politiken", group: "dagblade", matches: ["*://*.politiken.dk/*"] },
   { id: "berlingske", name: "Berlingske", group: "dagblade", matches: ["*://*.berlingske.dk/*"] },
   { id: "jp", name: "Jyllands-Posten", group: "dagblade", matches: ["*://*.jyllands-posten.dk/*"] },
-  // v1.80: JFM-medier (Jysk Fynske Medier) – 20 lokale og regionale sider på samme platform, valgt samlet med ét flueben.
-  // Overskrifterne er h3.teaser__title. Skjul indhold gælder ikke disse sider (brugerens valg 3. nov. 2026).
+  // JFM-medier (Jysk Fynske Medier): 20 lokale og regionale sider på samme platform, valgt samlet med ét flueben.
+  // Overskrifterne er h3.teaser__title. Skjul indhold gælder ikke disse sider (bevidst valg).
   { id: "jfm", name: "JFM-medier", group: "dagblade", matches: [
     "*://*.dagbladet-holstebro-struer.dk/*",
     "*://*.dbrs.dk/*",

@@ -1,5 +1,5 @@
 {
-  "version": "2.02",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.02-chrome.zip",
-  "notes": "Video-karrusellerne på Se og Hør og Billed-Bladet omskrives nu, og det samme gør listen på Ekstra Bladets sektionssider og videolisten på artikelsiderne, der nu har plads til 3 linjer."
+  "version": "2.03",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.03-chrome.zip",
+  "notes": "Ved »Model« viser en prik, om modellen virker, og hvornår den sidst blev tjekket. Du kan nu skrive dit eget model-id hos OpenAI, Anthropic, Gemini, DeepSeek, Groq og OpenRouter. Nøglefeltet er rettet, og koden er ryddet op."
 }

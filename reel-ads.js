@@ -1,4 +1,4 @@
-// unbAIt DK v2.00 (rettet i v2.01): »Spring reklamer over i reels« (Kun Berlingske og B.T.; indstillingen skipReelAds).
+// »Spring reklamer over i reels« (kun Berlingske og B.T.; indstillingen skipReelAds).
 // Kører i sidens egen verden (world MAIN) fra document_start på berlingske.dk og bt.dk og registreres kun, når
 // indstillingen er slået til (syncReelAdScripts i background.js).
 //
@@ -33,10 +33,10 @@
   };
   // Svaret »ingen reklame« (preroll: null): afspilleren opgiver pladsen uden en fejl i konsollen (et svar med error blev
   // til en uhåndteret fejl).
-  // v2.01: sidens eget reklamescript skriver sin egen requestTagAsync ind i objektet (også med adblocker). Den svarer
-  // aldrig, så afspilleren opgav først efter 3 sekunder. Felterne er derfor låst: det, siden skriver, ignoreres her og
+  // Sidens eget reklamescript skriver sin egen requestTagAsync ind i objektet (også med adblocker). Den svarer
+  // aldrig, og afspilleren ville vente 3 sekunder. Felterne er derfor låst: det, siden skriver, ignoreres her og
   // gemmes i pageBidding, som siden får uden for reels
-  // v2.01: svaret venter, til afspilleren har låst på reklamefeltet (data-scroll-locked="true"), dog højst NO_AD_WAIT_MS.
+  // Svaret venter, til afspilleren har låst på reklamefeltet (data-scroll-locked="true"), dog højst NO_AD_WAIT_MS.
   // Afspilleren låser selv op og scroller videre, når en reklame fejler, mens feltet er aktivt. Fejler den i de første
   // millisekunder, før feltet er aktivt, kan afspilleren låse bagefter uden at låse op igen (siden starter med en reklame)
   const NO_AD_WAIT_MS = 1500, POLL_MS = 50;
