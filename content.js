@@ -1,26 +1,26 @@
 (function () {
   "use strict";
 
-  // Siden findes ud fra adressen og den fælles liste i sites.js (v1.37)
+  // Siden findes ud fra adressen og den fælles liste i sites.js
   const SITE = (typeof siteForHost === "function" && siteForHost(location.hostname)?.id) || null;
   if (!SITE) return;
-  // Sider, der er bygget som Ekstra Bladet (.dre-item) eller som B.T. (TeaserLink) (v1.37)
+  // Sider, der er bygget som Ekstra Bladet (.dre-item) eller som B.T. (TeaserLink)
   const DRE_SITE = SITE === "eb" || SITE === "seoghoer" || SITE === "billedbladet";
   const TEASER_SITE = SITE === "bt" || SITE === "berlingske";
-  const NEW_SITE = !["eb", "bt", "tv2"].includes(SITE);   // siderne fra v1.37
-  // v1.80: JFM-medier (20 sider fra Jysk Fynske Medier, samme platform): overskrifterne er h3.teaser__title
+  const NEW_SITE = !["eb", "bt", "tv2"].includes(SITE);   // alle andre end EB, B.T. og TV 2
+  // JFM-medier (20 sider fra Jysk Fynske Medier, samme platform): overskrifterne er h3.teaser__title
   const JFM = SITE === "jfm";
-  // v1.89: Y.dk – emnerne under Skjul indhold gælder ikke (kun egne ord), som JFM-medier
+  // Y.dk – emnerne under Skjul indhold gælder ikke (kun egne ord), som JFM-medier
   const YDK = SITE === "y";
   // DR's TV- og lydsider (dr.dk/tv/ og dr.dk/lyd/): her er unbAIt DK ikke aktiv – ingen omskrivning,
-  // intet skjult og ingen statusboks. Tjekkes igen, når siden skifter adresse uden genindlæsning (v1.42)
-  // v1.79: DR TV ligger nu på /drtv/ (/tv/ sender videre dertil), så /tv er erstattet af /drtv
+  // intet skjult og ingen statusboks. Tjekkes igen, når siden skifter adresse uden genindlæsning
+  // DR TV ligger nu på /drtv/ (/tv/ sender videre dertil), så /tv er erstattet af /drtv
   const offPath = () => SITE === "dr" && /^\/(drtv|lyd)(\/|$)/i.test(location.pathname);
 
   // ---------------------------------------------------------------------
   // Tilstand
-  // enabled følger storage.sync, så alle åbne faner følger samme tænd/sluk (fund 03).
-  // runId tælles op ved sluk; arbejde fra en tidligere runde må aldrig ændre siden (fund 02).
+  // enabled følger storage.sync, så alle åbne faner følger samme tænd/sluk.
+  // runId tælles op ved sluk; arbejde fra en tidligere runde må aldrig ændre siden.
   // ---------------------------------------------------------------------
   let enabled = false;
   let runId = 0;
@@ -32,13 +32,13 @@
 
   // Tekster der er sektions-/kategorinavne og ikke overskrifter
   const NOT_HEADLINE = /^(seneste nyheder|mest læste|læs også|se også|nyheder|sport|samfund|udland|politik|underholdning|tv 2 play|live|video|annonce|simon siger)$/i;
-  // Overskrifter i navigation, sidehoved, sidefod, dialoger og formularer er ikke nyheder (fund S02)
+  // Overskrifter i navigation, sidehoved, sidefod, dialoger og formularer er ikke nyheder
   // <header> afvises kun, når det er sidens globale sidehoved – ikke en header inde i en artikel/et nyhedskort (R04)
   const NOT_CONTENT = "nav, footer, form, dialog, [role='navigation'], [role='banner'], [role='contentinfo'], [role='dialog'], [role='menu'], [aria-modal='true']";
   const CONTENT_SCOPE = "article, main, [role='main'], [class*='teaser'], [class*='Teaser'], [class*='card'], [class*='dre-item']";
   function inExcludedRegion(el) {
     if (el.closest(NOT_CONTENT.replace("form, ", ""))) return true;
-    // Avisen.dk (ASP.NET) har hele siden inde i én formular (#aspnetForm); den tæller ikke som formular (v1.37)
+    // Avisen.dk (ASP.NET) har hele siden inde i én formular (#aspnetForm); den tæller ikke som formular
     const f = el.closest("form");
     if (f && !(SITE === "avisen" && f.id === "aspnetForm")) return true;
     const h = el.closest("header");
@@ -63,8 +63,8 @@
     return !!el?.closest?.("#unbait-status, .unbait-text, .unbait-toggle, .unbait-ph");
   }
 
-  // v1.93: detail = fejlteksten på sin egen linje under tælleren (højst 120 tegn), så fx hele Kilo-beskeden kan ses
-  // v1.97 (M5): samme form som på indstillingssiden – showStatus(besked, { error, detail })
+  // Detail = fejlteksten på sin egen linje under tælleren (højst 120 tegn), så fx hele Kilo-beskeden kan ses
+  // Samme form som på indstillingssiden – showStatus(besked, { error, detail })
   function showStatus(msg, { error = false, detail = "" } = {}) { selfWrite(() => showStatusInner(msg, error, detail)); }
   let aiName = "";   // vises diskret i statusboksen
   let lastStatus = null, lastDetail = "", lastMsg = "", lastIsError = false;   // det, statusboksen viser nu
@@ -75,7 +75,7 @@
     if (detail.length > STATUS_DETAIL_MAX) detail = detail.slice(0, STATUS_DETAIL_MAX - 1).trimEnd() + "…";
     lastDetail = detail; lastMsg = msg; lastIsError = !!isError;
     const key = text + "|" + detail + "|" + aiName + "|" + isError;
-    if (statusEl?.isConnected && lastStatus === key) return; // ingen unødige ændringer (fund S04)
+    if (statusEl?.isConnected && lastStatus === key) return; // ingen unødige ændringer
     lastStatus = key;
     if (!statusEl) {
       statusEl = document.createElement("div");
@@ -88,7 +88,7 @@
         box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: none;
       `;
     }
-    // Nogle sider (fx DR) fjerner fremmede elementer, når deres eget script overtager siden (v1.40)
+    // Nogle sider (fx DR) fjerner fremmede elementer, når deres eget script overtager siden
     if (!statusEl.isConnected) (document.body || document.documentElement).appendChild(statusEl);
     statusEl.style.background = isError ? "#b91c1c" : "#111";
     const main = document.createElement("div");
@@ -112,10 +112,9 @@
     statusEl._t = setTimeout(() => { if (statusEl) statusEl.style.opacity = "0.4"; }, 8000);
   }
 
-  // v1.92: overskriftens tekst læses robust (brugerens fund 9. nov. 2026: »Alle elsker Rasmus« på Se og Hør blev ikke
-  // skjult). EB og Se og Hør har overskriften i tre størrelser (alt-title--lg/md/sm) med ét <p> pr. linje. Var kortet ikke
-  // tegnet endnu, gav innerText den rå tekst – alle tre størrelser og uden mellemrum (»Alleelsker«). Nu: kun den synlige
-  // størrelse (ellers den første), og er den ikke tegnet, linjeskift mellem afsnit og linjer.
+  // Overskriftens tekst læses robust. EB og Se og Hør har overskriften i tre størrelser (alt-title--lg/md/sm) med ét <p>
+  // pr. linje; er kortet ikke tegnet, giver innerText alle tre størrelser uden mellemrum (»Alleelsker«). Derfor: kun den
+  // synlige størrelse (ellers den første), og er den ikke tegnet, linjeskift mellem afsnit og linjer.
   const BLOCK_TAGS = /^(P|DIV|BR|LI|UL|OL|H[1-6]|SECTION|ARTICLE|HEADER|FOOTER|FIGCAPTION|BLOCKQUOTE|TR|TD|TH|DT|DD)$/;
   function textWithBreaks(root) {
     let out = "";
@@ -141,7 +140,7 @@
     return root.getClientRects().length > 0 ? (root.innerText || "") : textWithBreaks(root);
   }
 
-  // v1.97 (M7): under én scanning læses hver overskrifts tekst højst én gang (skjul-reglerne og udvælgelsen læste den hver sin gang).
+  // Under én scanning læses hver overskrifts tekst højst én gang (ellers læste skjul-reglerne og udvælgelsen den hver for sig).
   // Tømmes, når sidens ventende ændringer behandles (flushPending), så en ændring aldrig gemmer sig bag en gammel tekst
   let scanText = null;
   function cleanText(el) {
@@ -151,12 +150,12 @@
     return t;
   }
   function cleanTextNow(el) {
-    // Et ord delt med bindestreg over to linjer ("Konge-" / "mærke" på B.T.) samles til "Konge-mærke" (v1.31).
+    // Et ord delt med bindestreg over to linjer ("Konge-" / "mærke" på B.T.) samles til "Konge-mærke".
     // Kun ved linjeskift, og ikke foran "og"/"eller" ("sommer-" / "og vinterferie").
     return (readText(el) || el.textContent || "")
-      .replace(JFM ? /\u00AD/g : /(?!)/g, "")   // v1.80: JFM's bløde bindestreger (»Stel\u00ADla«) er ikke en del af teksten
+      .replace(JFM ? /\u00AD/g : /(?!)/g, "")   // JFM's bløde bindestreger (»Stel\u00ADla«) er ikke en del af teksten
       .replace(/(\p{L})-[ \t]*\n\s*(?!(?:og|eller)(?![\p{L}]))(?=\p{L})/gu, "$1-")
-      // v2.02: en adresse er aldrig en del af overskriften (EB's videoliste har fx videofilens adresse i titlen:
+      // En adresse er aldrig en del af overskriften (EB's videoliste har fx videofilens adresse i titlen:
       // »FREDAG Hund går verden rundt! https://cdn.jwplayer.com/videos/…mp4«)
       .replace(/\bhttps?:\/\/\S+/gi, " ")
       .replace(/\s+/g, " ").trim();
@@ -165,9 +164,9 @@
   function looksLikeHeadline(text) {
     // Ekstra Bladets overskrifter kan være ét enkelt ord ("Stopper!"). Teksten sidder i deres
     // overskriftsfelt (.dre-item__title), så den behøver ikke flere ord for at være en overskrift.
-    // Det samme gælder B.T. (v1.31): linket (TeaserLink) rummer kun overskriften – mærkater som
+    // Det samme gælder B.T.: linket (TeaserLink) rummer kun overskriften – mærkater som
     // "Log ind og læs" ligger uden for linket. Fx "Han er landet" og "Konge-mærke".
-    // Fra v1.37 gælder det alle sider undtagen TV 2: overskriftsfelterne er fundet præcist pr. side.
+    // Det gælder alle sider undtagen TV 2: overskriftsfelterne er fundet præcist pr. side.
     const short = SITE !== "tv2";
     const minLen = short ? 3 : 15, minWords = short ? 1 : 4;
     if (text.length < minLen || text.length > 180) return false;
@@ -185,9 +184,9 @@
   }
 
   function findArticleUrl(el) {
-    // v1.89: Y.dk – linket ligger enten om overskriften eller som et lag over hele kortet (<article> > a).
+    // Y.dk – linket ligger enten om overskriften eller som et lag over hele kortet (<article> > a).
     // Artikelsidens egen overskrift står i en <article> med links i brødteksten; den har intet lag og sendes ikke.
-    // v1.95: det samme på Jyllands-Posten efter det nye design
+    // Det samme på Jyllands-Posten efter det nye design
     const a = (YDK || SITE === "jp") ? el.closest("a[href]") || el.closest("article")?.querySelector(":scope > a[href]")
       : el.closest("a[href]") || el.querySelector("a[href]") ||
         el.closest("article, [class*='teaser'], [class*='Teaser'], [class*='dre-item']")?.querySelector("a[href]");
@@ -203,7 +202,7 @@
   const H_EB = /(^|\.)ekstrabladet\.dk$/, H_BT = /(^|\.)bt\.dk$/, H_TV2 = /^(www\.)?tv2\.dk$/, H_TV2N = /^nyheder\.tv2\.dk$/;
   const BT_SPORT = "sport|fodbold|superliga|tennis|cykling|haandbold|formel-1|motorsport|golf|ishockey|badminton|boksning|mma|esport|atletik|amerikansk-fodbold|basketball";
   const HIDE_RULES = {
-    // bold.dk (fodbold) og feltet.dk (cykling) linkes fra EB's forside og er altid sport (v1.18)
+    // bold.dk (fodbold) og feltet.dk (cykling) linkes fra EB's forside og er altid sport
     sport: [[H_EB, /^\/sport\//], [H_BT, new RegExp(`^/(${BT_SPORT})/`)], [/^sport\.tv2\.dk$/, /^/], [H_TV2, /^\/sport\//],
       [/(^|\.)bold\.dk$/, /^/], [/(^|\.)feltet\.dk$/, /^/]],
     underholdning: [[H_EB, /^\/(underholdning|musik|side9)\//], [H_BT, /^\/(underholdning|danske-kendte|int-kendte|royale|film-tv-og-streaming|musik)\//],
@@ -213,7 +212,7 @@
     penge: [[H_EB, /^\/(forbrug|penge)\//], [H_BT, /^\/(forbrug|penge)\//], [H_TV2N, /^\/(live\/)?penge(\/|$)/], [/^livsstil\.tv2\.dk$/, /^\/forbrug/]],
     video: [[H_EB, /^\/(play|podcast)\//], [H_BT, /^\/(video|podcast)\//], [H_TV2, /^\/(reel|reels)(\/|$)/], [/^play\.tv2\.dk$/, /^/]]
   };
-  // De nye sider (v1.37) – lavet ud fra brugerens forsider 22. okt. 2026. Avisen.dk har ikke emnet i
+  // De øvrige sider. Avisen.dk har ikke emnet i
   // adressen; der bruges kortets klasse (Category-krimi osv., se AVISEN_CATS).
   const hostRe = (d) => new RegExp(`(^|\\.)${d.replace(/\./g, "\\.")}$`);
   const H_DR = hostRe("dr.dk"), H_POL = hostRe("politiken.dk"), H_BER = hostRe("berlingske.dk"), H_JP = hostRe("jyllands-posten.dk"),
@@ -231,47 +230,46 @@
     penge: "Forbrug og penge", video: "Video og podcasts" };
   // Hele nyhedskortet, der skal skjules
   // EB's karruseller ("Nyeste fra Bold", "Populært i Ekstra Bladet+" …) har kort af typen a.list-item.
-  // De skjules som andre kort, men omskrives ikke (v1.18).
+  // De skjules som andre kort, men omskrives ikke.
   const CAROUSEL_ITEM = ".horizontal-container a.list-item";
-  // v2.02: EB's sektionsliste på fx /nyheder/ (Svelte, bygges i browseren; »Hent flere« henter flere): kategori i
+  // EB's sektionsliste på fx /nyheder/ (Svelte, bygges i browseren; »Hent flere« henter flere): kategori i
   // p.article-section og overskrift i h2.article-title. Videolisten i højre kolonne på artikelsiderne: a.video-card
   // med titlen i .video-clip-title (linker til almindelige artikler)
   const EB_LIST_ITEM = ".section-list-grid a.list-item", EB_VIDEO_LIST = "#videoListRightcolumn", EB_VIDEO_CARD = EB_VIDEO_LIST + " a.video-card";
-  // DR's blok "Mere fra dr.dk" på artikelsiderne (v1.76)
+  // DR's blok "Mere fra dr.dk" på artikelsiderne
   const DR_MORE = "#hydra-more-news", DR_MORE_CELL = "#hydra-more-news .dre-grid-layout-cell", DR_MORE_CARD = "#hydra-more-news .dre-article-teaser";
-  // v2.02: Se og Hørs og Billed-Bladets video-karruseller (»Fik du set?«, »Korte videoer«, »KORTE KLIP« …) bygges af
+  // Se og Hørs og Billed-Bladets video-karruseller (»Fik du set?«, »Korte videoer«, »KORTE KLIP« …) bygges af
   // Allers video-script (cdn.video.aller.com) efter indlæsningen: .aller-video-container[data-variant=carousel] med
   // .swiper-slide > a[href=/reels/<titel>/<id>] > picture > div > span (titlen). Klassenavnene (sc-…) skifter, så kun
   // de faste dele bruges. Hvert kort skjules for sig; hele karrusellen, når alle dens kort er skjult (updateGroups)
   const ALLER_CAROUSEL = '.aller-video-container[data-variant="carousel"]', ALLER_SLIDE = ALLER_CAROUSEL + " .swiper-slide";
   const ALLER_SLIDE_TITLE = ALLER_SLIDE + ' a[href*="/reels/"] picture span';
   const CARD_SEL = { eb: [EB_LIST_ITEM, EB_VIDEO_CARD, ".dre-item", CAROUSEL_ITEM], bt: ["[class*='TeaserClickArea_container']", "[class*='Teaser_container']"], tv2: [".tc_teaser"],
-    // v1.37
-    // Se og Hør: de små kort på undersiderne (fx /kendte, /nyheder/dine-penge) skjules med hele <article> (v1.48)
+    // Se og Hør: de små kort på undersiderne (fx /kendte, /nyheder/dine-penge) skjules med hele <article>
     seoghoer: [ALLER_SLIDE, ".dre-item", "article"], billedbladet: [ALLER_SLIDE, ".dre-item"], berlingske: ["[class*='TeaserClickArea_container']", "[class*='Teaser_container']"],
     // DR: kort i en karrusel ("Seneste nyt") skjules med hele karrusel-punktet, ellers bliver punktets
-    // udregnede bredde stående som et hul. Tjekkes først, så en hel sektion aldrig skjules (v1.40)
-    // v1.76: kortene i "… lige nu"/"Seneste om …" (#hydra-more-news) skjules med hele gitter-cellen (billede og tekst)
+    // udregnede bredde stående som et hul. Tjekkes først, så en hel sektion aldrig skjules
+    // Kortene i "… lige nu"/"Seneste om …" (#hydra-more-news) skjules med hele gitter-cellen (billede og tekst)
     dr: [DR_MORE_CELL, DR_MORE_CARD, "li.dre-slide-band-track-item", ".hydra-front-page-item", ".hydra-latest-news-item", ".hydra-card"],
-    // Avisen.dk: kortene i boksen "Forbrugerguides" skjules med hele boksen inkl. overskriften (v1.41)
+    // Avisen.dk: kortene i boksen "Forbrugerguides" skjules med hele boksen inkl. overskriften
     avisen: [".ThemeBox.Category-forbrugerguides", "a.FrontpageBox"],
     nyheder24: ["article.post-card", "a.recent-news-slider__item"], politiken: ["article", "li"], jp: ["article", "li"],
-    // v1.83: JFM-medier – punktet i »Mest læste« eller hele kortet
-    jfm: ["li.list__item", "article.teaser", "article.related-article"],   // v1.96: kortet i »Læs også«
-    // v1.89: Y.dk – hele kortet
+    // JFM-medier – punktet i »Mest læste« eller hele kortet
+    jfm: ["li.list__item", "article.teaser", "article.related-article"],   // Kortet i »Læs også«
+    // Y.dk – hele kortet
     y: ["article"] };
   // BT's podcast-række ("PODCAST"): kortene skjules som andre kort, men omskrives ikke. Kortet er listepunktet
-  // i slideren, og hele rækken med overskrift (Slider_container) skjules, når alle kort er skjult (v1.30).
+  // i slideren, og hele rækken med overskrift (Slider_container) skjules, når alle kort er skjult.
   const BT_PODCAST = "a[class*='PodcastEpisodeTeaser_link']";
   const BT_PODCAST_ITEM = "li[class*='Slider_listItem']", BT_PODCAST_ROW = "div[class*='Slider_container']";
-  // BT's korte videoer (bt.dk/video/reels/<kode>) har hverken uddrag eller ord i adressen og sendes ikke til AI'en (v1.30) –
-  // undtagen fra v2.00, når <kode> er et JW Player-id (jwReelId): så er uddraget videoens titel hos JW Player
-  // v1.94: passer adressens domæne og sti? (ugyldig adresse = nej)
+  // BT's korte videoer (bt.dk/video/reels/<kode>) har hverken uddrag eller ord i adressen og sendes ikke til AI'en –
+  // undtagen når <kode> er et JW Player-id (jwReelId): så er uddraget videoens titel hos JW Player
+  // Passer adressens domæne og sti? (ugyldig adresse = nej)
   const urlIs = (url, hostRe, pathRe) => { try { const u = new URL(url); return hostRe.test(u.hostname) && pathRe.test(u.pathname); } catch { return false; } };
   const isBtReel = (url) => urlIs(url, H_BT, /^\/video\/reels\//) && !jwReelId(url);
-  // BT's spil (bt.dk/spil/, fx "Gæt dagens ord" og "Det lille krydsord") sendes heller ikke til AI'en (v1.31)
+  // BT's spil (bt.dk/spil/, fx "Gæt dagens ord" og "Det lille krydsord") sendes heller ikke til AI'en
   const isBtGame = (url) => urlIs(url, H_BT, /^\/spil(\/|$)/);
-  // De nye sider (v1.37): korte videoer (…/reels/…), links til andre sider og sider, der ikke er
+  // De øvrige sider: korte videoer (…/reels/…), links til andre sider og sider, der ikke er
   // artikler (nyhedsbrev, spil, abonnement …), sendes ikke til AI'en
   function isNewSiteSkip(url) {
     if (!NEW_SITE || !url) return false;
@@ -284,11 +282,11 @@
       return false;
     } catch { return false; }
   }
-  // v2.00: Se og Hørs og Billed-Bladets korte videoer (kortene linker til /video/reel/<id>, siden omdirigerer til
+  // Se og Hørs og Billed-Bladets korte videoer (kortene linker til /video/reel/<id>, siden omdirigerer til
   // /reels/<titel>/<id>) og B.T.'s (/video/reels/<id>) sendes til AI'en med videoens titel og beskrivelse fra JW Player
   // som uddrag (reelContext). <id> er videoens id hos JW Player (8 tegn). Andre reels (fx Berlingske, DR) sendes ikke
   const REEL_SITES = ["seoghoer", "billedbladet", "bt"];
-  // B.T.'s videoer har ingen beskrivelse hos JW Player (19. nov. 2026), men titlen er mere oplysende end forsidens
+  // B.T.'s videoer har ingen beskrivelse hos JW Player, men titlen er mere oplysende end forsidens
   // overskrift (fx »Iskold melding« / »Mette F. lægger ikke fingre imellem: Befolkningsudskiftning?«): titlen er nok
   const REEL_TITLE_ONLY = SITE === "bt";
   function jwReelId(url) {
@@ -301,15 +299,15 @@
       return m ? m[1] : "";
     } catch { return ""; }
   }
-  // v1.79: TV 2's korte videoer (fx tv2.dk/penge/reel/…) har hverken uddrag eller brugbar tekst og sendes ikke til AI'en
+  // TV 2's korte videoer (fx tv2.dk/penge/reel/…) har hverken uddrag eller brugbar tekst og sendes ikke til AI'en
   const isTv2Reel = (url) => urlIs(url, /(^|\.)tv2\.dk$/, /(^|\/)reels?\//);
   const noAI = (url) => isBtReel(url) || isBtGame(url) || isTv2Reel(url) || isNewSiteSkip(url);
-  // Avisen.dk's annoncer (kort med klassen Category-advertorial, "Annonce …") sendes heller ikke til AI'en (v1.37)
-  // Fra v1.41 heller ikke boksen "Forbrugerguides" (Category-forbrugerguides), der også er annoncer
+  // Avisen.dk's annoncer (kort med klassen Category-advertorial, "Annonce …") sendes heller ikke til AI'en
+  // Heller ikke boksen "Forbrugerguides" (Category-forbrugerguides), der også er annoncer
   const AVISEN_ADS = ".Category-advertorial, .Category-forbrugerguides";
-  // v1.79: en overskrift uden link til en artikel (fx TV 2's »Mest sete på tv2.dk« og SEO-boksens »Få overblik over …«)
+  // En overskrift uden link til en artikel (fx TV 2's »Mest sete på tv2.dk« og SEO-boksens »Få overblik over …«)
   // er ikke en nyhed og sendes ikke til AI'en
-  // v2.00: annoncer på Se og Hør og Billed-Bladet: kortet har mærket »Annonce« (.dre-item__pretitle), eller linket går til
+  // Annoncer på Se og Hør og Billed-Bladet: kortet har mærket »Annonce« (.dre-item__pretitle), eller linket går til
   // /annoncer/ (linket kan også ligge under fx /nyheder/, så mærket er det sikre). De sendes aldrig til AI'en
   const ALLER_AD_CARD = ".dre-item, article";
   function isAllerAd(el, url = findArticleUrl(el)) {
@@ -319,15 +317,15 @@
     return !!card && [...card.querySelectorAll(".dre-item__pretitle")].some(p => p.closest(ALLER_AD_CARD) === card && /^annonce$/i.test(p.textContent.trim()));
   }
   const noAIEl = (el) => { const u = findArticleUrl(el); return !u || noAI(u) || (SITE === "avisen" && !!el.closest(AVISEN_ADS)) || isAllerAd(el, u); };
-  // Avisen.dk's boks "Partnerlinks" har ingen overskrifter; den skjules for sig (v1.41)
+  // Avisen.dk's boks "Partnerlinks" har ingen overskrifter; den skjules for sig
   const AVISEN_PARTNER = ".page_SponsoredLinksFP";
 
   let hideCfg = { cats: [], plus: false, ads: false, adsAvisen: false, adsAller: false, games: false, words: [], mode: "remove" };
   const hiddenRoots = new Map();   // kort -> pladsholder (eller null)
   const hiddenGroups = new Set();  // EB-grupper og BT's podcast-række, hvor alle kort er skjult
   const revealed = new WeakSet();  // kort, brugeren selv har klikket frem
-  const excerptText = new WeakMap(); // overskrift -> artiklens uddrag med små bogstaver (v1.77: egne ord tjekkes også her)
-  // v1.78: egne ord tjekkes også i artiklens adresse. Begge sider skrives som adressen: små bogstaver, æ/ø/å som ae/oe/aa,
+  const excerptText = new WeakMap(); // overskrift -> artiklens uddrag med små bogstaver (egne ord tjekkes også her)
+  // Egne ord tjekkes også i artiklens adresse. Begge sider skrives som adressen: små bogstaver, æ/ø/å som ae/oe/aa,
   // alt andet end bogstaver og tal som ét mellemrum
   const asAddress = (s) => String(s || "").toLowerCase().replace(/æ/g, "ae").replace(/ø/g, "oe").replace(/å/g, "aa")
     .replace(/[^a-z0-9]+/g, " ").trim();
@@ -341,7 +339,7 @@
   }
   async function loadHideCfg() {
     try {
-      const s = await chrome.storage.sync.get(HIDE_DEFAULTS);   // standardværdierne står i shared.js (v1.94)
+      const s = await chrome.storage.sync.get(HIDE_DEFAULTS);   // standardværdierne står i shared.js
       hideCfg = { cats: Array.isArray(s.hideCats) ? s.hideCats : [], plus: !!s.hidePlus, ads: !!s.hideAds, adsAvisen: !!s.hideAdsAvisen, adsAller: !!s.hideAdsAller, games: !!s.hideGames,
         words: parseWords(s.hideWords), mode: s.hideMode === "dim" ? "dim" : "remove" };
     } catch {}
@@ -363,25 +361,25 @@
   }
 
   function hideReasonFor(el, root) {
-    // v1.80: emnerne gælder ikke JFM-medierne (brugerens valg); v1.83: egne ord gælder (se nedenfor)
+    // Emnerne gælder ikke JFM-medierne, men egne ord gør (se nedenfor)
     if (!hideActive() || revealed.has(root)) return "";
     if (el.querySelector("[data-unbait]")) return ""; // vurderes ud fra overskriften inden i
     if (hideCfg.plus && SITE === "eb" &&
         (root.matches(".dre-item--feature-plus") || root.querySelector(".dre-feature-snippet--plus, .icon-plus-anim, .premium-dogear"))) return "Ekstra Bladet+";
     const url = findArticleUrl(el);
-    // Annoncer: EB's kommercielle sider (fx karrusellen "Populært på Ekstra Bladet Pristjek") (v1.21)
-    // Spil: B.T.'s spil (bt.dk/spil/) (v1.31)
+    // Annoncer: EB's kommercielle sider (fx karrusellen "Populært på Ekstra Bladet Pristjek")
+    // Spil: B.T.'s spil (bt.dk/spil/)
     if (hideCfg.games && SITE === "bt" && url && isBtGame(url)) return "Spil";
     if (hideCfg.ads && SITE === "eb" && url && urlIs(url, H_EB, /^\/kommerciel\//)) return "Annonce";
-    // Annoncer på Avisen.dk: advertorials og hele boksen "Forbrugerguides" (v1.41)
+    // Annoncer på Avisen.dk: advertorials og hele boksen "Forbrugerguides"
     if (hideCfg.adsAvisen && SITE === "avisen" && root.closest?.(AVISEN_ADS)) return "Annonce";
-    // Annoncer på Se og Hør og Billed-Bladet (v2.00)
+    // Annoncer på Se og Hør og Billed-Bladet
     if (hideCfg.adsAller && isAllerAd(el, url)) return "Annonce";
     if (SITE === "avisen" && hideCfg.cats.length) {
       const cls = [...(root.classList || [])].find(c => c.startsWith("Category-"))?.slice(9).toLowerCase();
       for (const c of hideCfg.cats) if (cls && (AVISEN_CATS[c] || []).includes(cls)) return HIDE_LABELS[c];
     }
-    if (url && hideCfg.cats.length && !JFM && !YDK) {   // v1.89: heller ikke Y.dk
+    if (url && hideCfg.cats.length && !JFM && !YDK) {   // Heller ikke Y.dk
       try {
         const u = new URL(url);
         for (const c of hideCfg.cats) {
@@ -394,9 +392,9 @@
       // Altid den originale overskrift. I karrusellerne kun selve titlen (ikke emne-mærkat og "Gem")
       const titleEl = el.matches(CAROUSEL_ITEM) ? (el.querySelector(".list-item-title") || el) : el;
       const text = (c ? c.origText : cleanText(titleEl)).toLowerCase();
-      // v1.77: også artiklens uddrag, når det er hentet (før AI-kaldet). Gemte omskrivninger tjekkes kun på overskriften
+      // Også artiklens uddrag, når det er hentet (før AI-kaldet). Gemte omskrivninger tjekkes kun på overskriften
       const ex = excerptText.get(el) || "";
-      // v1.78: også artiklens adresse (fx …/troels-mylenbergs-doed…): bindestreger som mellemrum, æ/ø/å som ae/oe/aa
+      // Også artiklens adresse (fx …/troels-mylenbergs-doed…): bindestreger som mellemrum, æ/ø/å som ae/oe/aa
       const adr = url ? addressWords(url) : "";
       const w = hideCfg.words.find(w => text.includes(w) || ex.includes(w) || (adr && asAddress(w) && adr.includes(asAddress(w))));
       if (w) return `"${w}"`;
@@ -458,7 +456,7 @@
 
   // EB: plus-henvisninger under et kort ("+ Ejer stort palæ"). De fjernes altid helt (også ved
   // "tynd linje"), tæller ikke med i "skjult", og hovedkortet bliver stående. Er alle henvisninger
-  // i boksen skjult, fjernes boksen også (v1.21).
+  // i boksen skjult, fjernes boksen også.
   const hiddenChasers = new Set();
   function updateChasers() {
     if (SITE !== "eb") return;
@@ -478,7 +476,7 @@
   }
 
   // EB: er alle kort i en gruppe skjult, skjules gruppen også, så der ikke står tomme rammer tilbage.
-  // Det samme gælder karrusellerne: her skjules hele blokken med overskrift (v1.18).
+  // Det samme gælder karrusellerne: her skjules hele blokken med overskrift.
   function updateGroups() {
     const groups = [];
     if (SITE === "eb") {
@@ -489,20 +487,20 @@
         const g = w && w.querySelectorAll(".horizontal-container").length === 1 ? w : hc;
         groups.push([g, hc.querySelectorAll("a.list-item")]);
       });
-      // v2.02: hele videolisten i højre kolonne, når alle dens kort er skjult
+      // Hele videolisten i højre kolonne, når alle dens kort er skjult
       document.querySelectorAll(EB_VIDEO_LIST).forEach(v => groups.push([v, v.querySelectorAll("a.video-card")]));
     }
     if (SITE === "bt") {
-      // BT's podcast-række: hele rækken med overskriften "PODCAST", når alle podcast-kort er skjult (v1.30)
+      // BT's podcast-række: hele rækken med overskriften "PODCAST", når alle podcast-kort er skjult
       const rows = new Set([...document.querySelectorAll(BT_PODCAST)].map(a => a.closest(BT_PODCAST_ROW)).filter(Boolean));
       rows.forEach(r => groups.push([r, [...r.querySelectorAll(BT_PODCAST)].map(cardRoot)]));
     }
     if (SITE === "seoghoer" || SITE === "billedbladet") {
-      // v2.02: hele video-karrusellen (med overskriften, fx »Fik du set?«), når alle dens kort er skjult
+      // Hele video-karrusellen (med overskriften, fx »Fik du set?«), når alle dens kort er skjult
       document.querySelectorAll(ALLER_CAROUSEL).forEach(c => groups.push([c.closest(".dre-item") || c, c.querySelectorAll(".swiper-slide")]));
     }
     if (SITE === "dr") {
-      // DR: hele blokken "… lige nu"/"Seneste om …" med overskrift, når alle dens kort er skjult (v1.76)
+      // DR: hele blokken "… lige nu"/"Seneste om …" med overskrift, når alle dens kort er skjult
       document.querySelectorAll(DR_MORE).forEach(b => groups.push([b, [...b.querySelectorAll("a.dre-teaser-title")].map(cardRoot)]));
     }
     if (!groups.length && !hiddenGroups.size) return;
@@ -517,7 +515,7 @@
 
   // ---------------------------------------------------------------------
   // Original og omskrivning. De oprindelige noder gemmes og sættes tilbage,
-  // så sidens egne eventlyttere bevares (fund S05).
+  // så sidens egne eventlyttere bevares.
   // ---------------------------------------------------------------------
   function resetCard(el, restore) { selfWrite(() => resetCardInner(el, restore)); }
   function resetCardInner(el, restore) {
@@ -525,15 +523,15 @@
     if (c) {
       if (restore && c.nodes && c.showing === "ai") el.replaceChildren(...c.nodes);
       el.querySelector(".unbait-toggle")?.remove();
-      if (c.jobId) chrome.runtime.sendMessage({ action: "cancelJob", jobId: c.jobId }).catch(() => {});
+      if (c.jobId) chrome.runtime.sendMessage({ action: "cancelJob", jobId: c.jobId }).catch(() => {});   // opgaven kan være færdig
     }
     cards.delete(el);
     tracked.delete(el);
-    excerptText.delete(el);   // v1.90 (audit A-02): et uddrag fra den forrige artikel må ikke skjule den nye
+    excerptText.delete(el);   // Et uddrag fra den forrige artikel må ikke skjule den nye
     delete el.dataset.unbait;
   }
 
-  const KEEP_SIZE_MAX = 28;   // px – til og med denne skrift skrumpes omskrivningen ikke (v1.55)
+  const KEEP_SIZE_MAX = 28;   // px – til og med denne skrift skrumpes omskrivningen ikke
   function applyRewrite(el, text) { selfWrite(() => applyRewriteInner(el, text)); }
   function applyRewriteInner(el, text) {
     const c = cards.get(el);
@@ -564,7 +562,7 @@
     span.className = "unbait-text";
     span.style.cssText = "display:block; line-height:1.1; white-space:normal; overflow-wrap:normal; word-break:normal; hyphens:manual;";
     copy.forEach(p => { if (saved[p]) span.style[p] = saved[p]; });
-    // v1.67: sidste ord og AI-ikonet står i ét element uden linjeskift, så ikonet aldrig ender alene på en linje.
+    // Sidste ord og AI-ikonet står i ét element uden linjeskift, så ikonet aldrig ender alene på en linje.
     // En pladsholder i ikonets bredde regnes med, når skriftstørrelsen tilpasses; ikonet erstatter den bagefter.
     const cut = text.lastIndexOf(" ");
     const tail = document.createElement("span");
@@ -587,9 +585,9 @@
       span.appendChild(inner);
     } else {
       span.append(head, tail);
-      // v2.02: er overskriften selv et inline-element med baggrund (fx titlen i Se og Hørs video-karruseller: gul
+      // Er overskriften selv et inline-element med baggrund (fx titlen i Se og Hørs video-karruseller: gul
       // baggrund på et <span>), tegnes baggrunden kun om inline-indhold. En blok indeni gav tynde gule streger og tekst
-      // uden baggrund (brugerens fund 20. nov. 2026) – så her indsættes teksten inline
+      // uden baggrund – så her indsættes teksten inline
       if (hasBg && cs.display === "inline") span.style.display = "inline";
     }
     el.replaceChildren(span);
@@ -597,7 +595,7 @@
     c.anchor = tail;
 
     // Almindelige kort (skrift op til 28 px) beholder sidens skriftstørrelse og linjeafstand; bliver teksten længere,
-    // bliver kortet højere (v1.55). Kun store overskrifter, som siden selv tilpasser (fx EB's og B.T.'s topkort), skrumpes.
+    // bliver kortet højere. Kun store overskrifter, som siden selv tilpasser (fx EB's og B.T.'s topkort), skrumpes.
     if (maxFont <= KEEP_SIZE_MAX) { span.style.fontSize = maxFont + "px"; span.style.lineHeight = cs.lineHeight; return; }
     if (boxW < 20 || boxH < 10) return;
     span.style.width = boxW + "px";
@@ -616,8 +614,8 @@
   }
 
   // ---------------------------------------------------------------------
-  // Skifteknap: unbAIt DK-ikonet (AI). Rødt = omskrevet, gråt = original. 18 px (v1.34).
-  // Kan bruges med tastatur (Tab, Enter, Mellemrum) (fund S06).
+  // Skifteknap: unbAIt DK-ikonet (AI). Rødt = omskrevet, gråt = original. 18 px.
+  // Kan bruges med tastatur (Tab, Enter, Mellemrum).
   // ---------------------------------------------------------------------
   const ICON_ON = chrome.runtime.getURL("icons/on-48.png");
   const ICON_OFF = chrome.runtime.getURL("icons/off-48.png");
@@ -625,7 +623,7 @@
   let styleEl = null;
   function injectStyleOnce() {
     if (styleEl?.isConnected) return;
-    if (styleEl) { (document.head || document.documentElement).appendChild(styleEl); return; }   // fjernet af siden (v1.40)
+    if (styleEl) { (document.head || document.documentElement).appendChild(styleEl); return; }   // fjernet af siden
     const st = styleEl = document.getElementById("unbait-style") || document.createElement("style");
     if (st.isConnected) return;
     st.id = "unbait-style";
@@ -638,15 +636,15 @@
       "border-radius:4px !important;padding:3px 8px !important;margin:2px 0 !important;cursor:pointer !important;text-align:left !important;" +
       "text-transform:none !important;letter-spacing:normal !important;font-style:normal !important;font-weight:400 !important}" +
       ".unbait-ph:focus-visible{outline:2px solid #2563eb !important}" +
-      // v2.02: titlerne i EB's videoliste (højre kolonne) får 3 linjer i stedet for 2 (brugerens ønske 20. nov. 2026,
-      // preview godkendt): 14 px skrift og 18 px linjer, så 3 linjer og datoen kan være i kortets 81 px (billedets højde)
+      // Titlerne i EB's videoliste (højre kolonne) får 3 linjer i stedet for 2 (plads nok i
+      // kortet): 14 px skrift og 18 px linjer, så 3 linjer og datoen kan være i kortets 81 px (billedets højde)
       (SITE === "eb" ? "#videoListRightcolumn a.video-card .video-clip-title{-webkit-line-clamp:3 !important;line-clamp:3 !important}" : "");
     (document.head || document.documentElement).appendChild(st);
   }
 
   function setToggleState(btn, showing) {
     const img = btn.firstChild;
-    // v1.91: »Behold originalen« – ikonet står nedtonet, og højreklik (eller klik) giver »Omskriv alligevel«
+    // »Behold originalen« – ikonet står nedtonet, og højreklik (eller klik) giver »Omskriv alligevel«
     if (showing === "kept") {
       img.src = ICON_OFF; btn.style.setProperty("opacity", ".45", "important");
       btn.setAttribute("aria-pressed", "false"); btn.setAttribute("aria-haspopup", "menu");
@@ -672,10 +670,10 @@
     btn.tabIndex = 0;
     btn.style.cssText = `
       display:inline-flex !important; align-items:center !important; justify-content:center !important;
-      width:21px !important; height:21px !important; min-width:0 !important; max-width:none !important;   /* v1.63: klikområde 21×21, ikonet stadig 18×18 */
+      width:21px !important; height:21px !important; min-width:0 !important; max-width:none !important;   /* klikområde 21×21, ikonet stadig 18×18 */
       margin:0 0 0 3px !important; padding:0 !important; cursor:pointer; font-size:12px !important;
       line-height:1 !important; vertical-align:middle !important; background:none !important;
-      position:relative !important; z-index:2147483646 !important; float:none !important;   /* v1.57: over sidens usynlige klik-lag (EB/B.T.) */
+      position:relative !important; z-index:2147483646 !important; float:none !important;   /* over sidens usynlige klik-lag (EB/B.T.) */
     `;
     const img = document.createElement("img");
     img.alt = "";
@@ -689,7 +687,7 @@
       flushPending();      // sidens ventende ændringer først – kortet kan være nulstillet af dem
       const c = cards.get(el);
       if (!c || !el.contains(btn)) return;
-      if (c.kept || !c.rewritten) { openCardMenu(el, btn); return; }   // v1.91: intet at skifte til – menuen i stedet
+      if (c.kept || !c.rewritten) { openCardMenu(el, btn); return; }   // Intet at skifte til – menuen i stedet
       c.showing = c.showing === "ai" ? "original" : "ai";
       selfWrite(() => {
         if (c.showing === "ai") applyRewriteInner(el, c.rewritten);
@@ -702,15 +700,15 @@
     btn.addEventListener("click", toggle);
     btn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") toggle(e);
-      // v1.91: menuen også fra tastaturet (menu-tasten eller Shift+F10)
+      // Menuen også fra tastaturet (menu-tasten eller Shift+F10)
       else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); e.stopPropagation(); openCardMenu(el, btn); }
     });
-    // v1.91: højreklik på ikonet åbner unbAIt DK's lille menu (Prøv igen / Behold originalen / Omskriv alligevel)
+    // Højreklik på ikonet åbner unbAIt DK's lille menu (Prøv igen / Behold originalen / Omskriv alligevel)
     btn.addEventListener("contextmenu", (e) => { e.preventDefault(); e.stopPropagation(); openCardMenu(el, btn); });
     btn.addEventListener("mousedown", (e) => { if (e.button === 2) e.stopPropagation(); });
     placeToggle(cards.get(el), el, btn);
   }
-  // Ikonet sættes efter sidste ord (i stedet for pladsholderen) eller, ved originalen, sidst i overskriften (v1.67)
+  // Ikonet sættes efter sidste ord (i stedet for pladsholderen) eller, ved originalen, sidst i overskriften
   function placeToggle(c, el, btn) {
     if (c.showing === "ai" && c.anchor && c.span?.contains(c.anchor)) {
       c.anchor.querySelector(".unbait-slot")?.remove();
@@ -722,19 +720,19 @@
   // Uddragets størrelse: højst EXCERPT_MAX tegn i alt; brødteksten fra strukturerede data højst BODY_MAX; er der allerede
   // ENOUGH tegn fra beskrivelserne, hentes ingen brødtekst
   const EXCERPT_MAX = 1500, BODY_MAX = 1200, ENOUGH = 600;
-  // Artikel-uddrag (fund 06): kun tekst, der med rimelig sikkerhed tilhører
+  // Artikel-uddrag: kun tekst, der med rimelig sikkerhed tilhører
   // den aktuelle artikel. Kan det ikke afgøres, bruges intet uddrag.
   // ---------------------------------------------------------------------
   function samePage(a, b) {
-    const n = (u) => pagePath(u, location.href);   // samme regel som cache-nøglen i baggrunden (shared.js, v1.97)
+    const n = (u) => pagePath(u, location.href);   // samme regel som cache-nøglen i baggrunden
     // Samme domæne og samme artikelnummer er samme artikel, selv om teksten i adressen er ændret
-    // (EB omdøber adresser: …/cigaretter-i-kufferterne/11326381 -> …/cigaretter-i-lufthavnen/11326381) (v1.20)
+    // (EB omdøber adresser: …/cigaretter-i-kufferterne/11326381 -> …/cigaretter-i-lufthavnen/11326381)
     const id = (u) => { try { const x = new URL(u, location.href); const m = x.pathname.match(/(?:\/|article)(\d{6,})(?:\.ece)?\/?$/);
       return m ? x.hostname.replace(/^www\./, "").toLowerCase() + "#" + m[1] : ""; } catch { return ""; } };
     return !!((n(a) && n(a) === n(b)) || (id(a) && id(a) === id(b)));
   }
 
-  // Teksten i artiklens adresse, til brug når der intet uddrag er (v1.20), eller uddraget er kort (v1.30).
+  // Teksten i artiklens adresse, til brug når der intet uddrag er, eller uddraget er kort.
   // Fx …/krimi/taget-med-naesten-100.000-cigaretter-i-kufferterne/11326381 -> "taget med naesten 100.000 cigaretter i kufferterne"
   function urlText(url) {
     try {
@@ -750,7 +748,7 @@
 
   const BODY_SELECTORS = {
     eb: ["[itemprop='articleBody']", ".article-bodytext", "[class*='article-body']", "[class*='bodytext']"],
-    // De nye sider (v1.37) bruger GENERIC_BODY nedenfor
+    // De øvrige sider bruger GENERIC_BODY nedenfor
     bt: ["[itemprop='articleBody']", "[class*='ArticleBody']", "[class*='article-body']", "[class*='bodytext']"],
     tv2: ["[itemprop='articleBody']", ".tc_richcontent", "[class*='article__body']", "[class*='article-body']"]
   };
@@ -758,7 +756,7 @@
     "[class*='article__body']", "[class*='bodytext']", "[class*='article-content']", "article"];
   const NOT_BODY = "aside, nav, footer, figure, figcaption, [class*='related'], [class*='relateret'], [class*='teaser'], [class*='Teaser'], [class*='recommend'], [class*='anbefal'], [class*='list'], [class*='paywall'], [class*='newsletter'], [class*='nyhedsbrev']";
 
-  // finalUrl (v1.67): adressen, serveren omdirigerede til (fx B.T.: …/fyrer-123 -> …/nu-er-det-besluttet-fyrer-123)
+  // finalUrl: adressen, serveren omdirigerede til (fx B.T.: …/fyrer-123 -> …/nu-er-det-besluttet-fyrer-123)
   function extractExcerpt(html, articleUrl, finalUrl = "") {
     const doc = new DOMParser().parseFromString(html, "text/html");
     // Siden skal være den artikel, vi bad om (ikke fx en login- eller forside efter omdirigering)
@@ -777,7 +775,7 @@
     }
     if (canonical && !samePage(canonical, articleUrl)) {
       // TV 2's regionale artikler: canonical peger på et andet domæne (fx tvsyd.dk), men
-      // og:url passer præcis med linket. Så er det den rigtige artikel (v1.23).
+      // og:url passer præcis med linket. Så er det den rigtige artikel.
       const host = (u) => { try { return new URL(u, location.href).hostname.replace(/^www\./, ""); } catch { return ""; } };
       if (canonLink && ogUrl && samePage(ogUrl, articleUrl) && host(canonLink) !== host(articleUrl)) canonical = ogUrl;
       else return "";
@@ -787,7 +785,7 @@
     const add = (t) => {
       t = (t || "").replace(/\s+/g, " ").trim();
       if (t.length < 30) return;
-      if (siteDescriptions().has(t)) return;   // mediets generelle beskrivelse er ikke et uddrag (v1.19)
+      if (siteDescriptions().has(t)) return;   // mediets generelle beskrivelse er ikke et uddrag
       if (/cookie|abonnement|log ind|annonce|del artiklen|læs også/i.test(t)) return;
       if (parts.some(p => p.includes(t) || t.includes(p))) return;
       parts.push(t);
@@ -821,7 +819,7 @@
 
     // 2) Sidens beskrivelse – kun når siden bekræftet er artiklen
     if (canonical) add(doc.querySelector('meta[property="og:description"]')?.content);
-    // EB's live-artikler har kun underrubrikken her (og:description er blot "Læs mere her") (v1.19)
+    // EB's live-artikler har kun underrubrikken her (og:description er blot "Læs mere her")
     if (canonical) add(doc.querySelector('meta[name="description"]')?.content);
 
     // 3) Brødtekst fra artikelens egen tekstblok – ikke relaterede bokse
@@ -845,7 +843,7 @@
   }
 
   // EB's podcast-links (/podcast/#/episode/<podcast>/<episode>): siden bygges først i browseren,
-  // så den hentes ikke. Podcastens navn og episodens titel tages fra adressen (v1.19).
+  // så den hentes ikke. Podcastens navn og episodens titel tages fra adressen.
   function podcastContext(url) {
     try {
       const u = new URL(url);
@@ -857,11 +855,11 @@
     } catch { return null; }
   }
 
-  // Mærkatet på kortet ("chok-sag", "nyt afsnit af 'redlight'") – på EB (v1.19) og fra v1.37 også
+  // Mærkatet på kortet ("chok-sag", "nyt afsnit af 'redlight'") – på EB og
   // Se og Hør og Billed-Bladet, der er bygget på samme måde. "Lige nu" er ikke et mærkat.
   function cardLabel(el) {
     if (!DRE_SITE) return "";
-    if (SITE === "eb" && el.closest(EB_LIST_ITEM + ", " + EB_VIDEO_CARD)) return "";   // v2.02: kategorien er ikke et mærkat
+    if (SITE === "eb" && el.closest(EB_LIST_ITEM + ", " + EB_VIDEO_CARD)) return "";   // Kategorien er ikke et mærkat
     const h = el.closest(".dre-item")?.querySelector(".dre-item__header .dre-repeat");
     const t = (h?.textContent || "").replace(/\s+/g, " ").trim();
     if (/^lige nu$/i.test(t)) return "";
@@ -875,7 +873,7 @@
 
   // Se og Hørs liveblog bygges i browseren af Norkon Live Center, så indlægget står ikke i
   // sidens HTML. Linket (?p=lc-<id>) peger på et bestemt indlæg; kanal og tenant står i sidens
-  // Nuxt-data som "livecenter","<kanal>","<tenant>". Indlægget hentes fra Norkons feed (v1.39).
+  // Nuxt-data som "livecenter","<kanal>","<tenant>". Indlægget hentes fra Norkons feed.
   const LC_FEED = "https://livecentercdn.norkon.net/BulletinFeed/";
   const LC_MAX_EARLIER = 3;
   function liveCenterPostId(url) {
@@ -920,12 +918,12 @@
     return "";
   }
 
-  // v2.00: en reel på Se og Hør og Billed-Bladet har ingen tekst i sidens HTML (siden bygges i browseren). Titel og
+  // En reel på Se og Hør og Billed-Bladet har ingen tekst i sidens HTML (siden bygges i browseren). Titel og
   // beskrivelse hentes fra JW Players åbne feed (Access-Control-Allow-Origin: *). Krediteringen sidst i beskrivelsen
   // (»Journalist: … / Foto: …«) tages ikke med. Uden beskrivelse: intet uddrag, og reelen sendes ikke til AI'en (runJob).
   // På B.T. er titlen alene nok (REEL_TITLE_ONLY); uden titel sendes reelen heller ikke
   const JW_MEDIA = "https://cdn.jwplayer.com/v2/media/";
-  // v2.02: også stavefejl og flere roller før kolon, set i rigtige beskrivelser (»Jounalist: …«, »Journalist & video: …«,
+  // Også stavefejl og flere roller før kolon, set i rigtige beskrivelser (»Jounalist: …«, »Journalist & video: …«,
   // »Journalist/Video: …«)
   const REEL_CREDIT = /^\s*(jou?r?n?alist\w*|foto\w*|redigering|klip|kamera|producer|produktion|tilrettelæggelse|video|vært\w*|lyd)\b[^:\n]{0,40}:/i;
   function reelText(media, id) {
@@ -942,7 +940,7 @@
     return reelText(await fetchJson(JW_MEDIA + encodeURIComponent(id), FEED_TIMEOUT_MS), id);
   }
 
-  // TV 2's live-sider (v1.99): uddraget er altid et bestemt indlæg eller liveblog'ens sammendrag – aldrig liveblog'ens faste
+  // TV 2's live-sider: uddraget er altid et bestemt indlæg eller liveblog'ens sammendrag – aldrig liveblog'ens faste
   // beskrivelse (og:description, fx »TV 2 serverer et kort og præcist overblik …«), som TV 2 også giver på ?entry=-sider.
   // Gælder live-sider på alle *.tv2.dk (nyheder., sport., underholdning., vejr. …)
   const TV2_LIVE = /^https?:\/\/(?!play\.)([a-z0-9-]+\.)?tv2\.dk\/live\//i;
@@ -956,9 +954,9 @@
     return (ps.length ? ps.join("\n") : body.textContent.replace(/\s+/g, " ").trim()).slice(0, EXCERPT_MAX);
   }
 
-  // v1.68: liveblogs uden ?entry= (fx forsidens kort, der linker til hele »Kort nyt«): indlægget findes ud fra
+  // Liveblogs uden ?entry= (fx forsidens kort, der linker til hele »Kort nyt«): indlægget findes ud fra
   // overskriften. Store og små bogstaver, mellemrum, anførselstegn og afsluttende tegn tæller ikke. Sammenligningen
-  // (headlineKey) står i shared.js (v1.94)
+  // (headlineKey) står i shared.js
   function tv2LivePost(html, articleUrl, headline) {
     const want = headlineKey(headline);
     if (!want) return "";
@@ -970,8 +968,8 @@
       const title = post.querySelector(".tc_post__body__title");
       if (title && headlineKey(title.textContent) === want) return tv2PostText(post);
     }
-    // v1.79: er liveblog'ens egen titel (og:title, <title> eller JSON-LD headline) kortets overskrift, er kortet hele
-    // liveblog'en (en selvstændig live-artikel, eller en liveblog, hvis rubrik TV 2 skifter undervejs). v1.99: så bruges
+    // Er liveblog'ens egen titel (og:title, <title> eller JSON-LD headline) kortets overskrift, er kortet hele
+    // liveblog'en (en selvstændig live-artikel, eller en liveblog, hvis rubrik TV 2 skifter undervejs). Så bruges
     // liveblog'ens sammendrag (»Hvad sker der? …«) – ikke og:description, som på løbende liveblogs er den faste tekst
     // (»Følg den seneste udvikling fra … finansielle markeder her.«). »Kort nyt« har titlen »Kort nyt«
     const titles = [doc.querySelector("meta[property='og:title']")?.content || "", doc.querySelector("title")?.textContent || ""];
@@ -992,8 +990,8 @@
     return out.filter(Boolean).join("\n").slice(0, EXCERPT_MAX);
   }
 
-  // v1.99: liveindlæg med ?entry=<id>: TV 2 svarer med indlæggets egen adresse under samme liveblog
-  // (…/<liveblog>/<indlæg>?entry=<id>), og indlægget står i siden som article.tc_post med id = <id> (v1.26: kun beskrivelsen)
+  // Liveindlæg med ?entry=<id>: TV 2 svarer med indlæggets egen adresse under samme liveblog
+  // (…/<liveblog>/<indlæg>?entry=<id>), og indlægget står i siden som article.tc_post med id = <id>
   function tv2EntryPost(html, articleUrl) {
     const doc = tv2Doc(html);
     let entry = "";
@@ -1007,7 +1005,7 @@
     return post ? tv2PostText(post) : "";
   }
 
-  // v1.94: artikel på samme domæne som siden hentes direkte (højst ARTICLE_TIMEOUT_MS, højst ARTICLE_MAX_CHARS tegn);
+  // Artikel på samme domæne som siden hentes direkte (højst ARTICLE_TIMEOUT_MS, højst ARTICLE_MAX_CHARS tegn);
   // finalUrl = adressen efter en omdirigering. Fejler hentningen, kastes fejlen videre til getContext (fetchWithTimeout i shared.js)
   async function fetchSameOrigin(url) {
     const { res, raw } = await fetchWithTimeout(url, { credentials: "include" }, ARTICLE_TIMEOUT_MS);
@@ -1020,19 +1018,19 @@
     const pod = podcastContext(url);
     if (pod !== null) return pod;
     const reel = jwReelId(url);
-    if (reel) return await reelContext(reel);   // v2.00
+    if (reel) return await reelContext(reel);
     const lcPost = liveCenterPostId(url);
     if (lcPost) {
       try {
         if (new URL(url, location.href).origin !== location.origin) return "";
         const { html } = await fetchSameOrigin(url);
-        return await liveCenterContext(html, lcPost);   // ingen generisk liveblog-tekst som før
+        return await liveCenterContext(html, lcPost);   // ingen generisk liveblog-tekst
       } catch { return ""; }
     }
-    // TV 2's live-sider på alle *.tv2.dk: et bestemt indlæg (?entry=) eller hele liveblog'en (v1.68, v1.99)
+    // TV 2's live-sider på alle *.tv2.dk: et bestemt indlæg (?entry=) eller hele liveblog'en
     const tv2Live = TV2_LIVE.test(url);
     const tv2Entry = tv2Live && (() => { try { return new URL(url).searchParams.has("entry"); } catch { return false; } })();
-    // v1.81: kun hele led i stien (/tv/, /video, /live?…); før ramte \b også fx /tv-2-erkender-fejl…
+    // Kun hele led i stien (/tv/, /video, /live?…), så fx /tv-2-erkender-fejl… ikke rammes
     if (!tv2Live && /\/(live|video|play|tv)(\/|$|[?#])|play\.tv2\.dk/i.test(url)) return "";
     try {
       let html = "", finalUrl = "";
@@ -1048,7 +1046,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Kø: kun synlige (eller næsten synlige) overskrifter, 4 ad gangen (fund 08)
+  // Kø: kun synlige (eller næsten synlige) overskrifter, 4 ad gangen
   // ---------------------------------------------------------------------
   const pending = [];
   let running = 0;
@@ -1103,7 +1101,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // v1.91: menuen på AI-ikonet (højreklik). Ligger i sin egen shadow DOM, så sidens stil ikke rammer den.
+  // Menuen på AI-ikonet (højreklik). Ligger i sin egen shadow DOM, så sidens stil ikke rammer den.
   // »Prøv igen« og »Omskriv alligevel« laver et nyt AI-kald uden om den gemte omskrivning og opdaterer alle
   // kort med samme historie. »Behold originalen« huskes i baggrunden; ikonet står så nedtonet.
   // ---------------------------------------------------------------------
@@ -1152,7 +1150,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     const c = cards.get(el);
     return c ? [...tracked].filter(x => { const o = cards.get(x); return o && x.isConnected && o.url === c.url && o.origText === c.origText; }) : [];
   }
-  // v1.94: omskrivningen fjernes – originalen sættes tilbage (hvis den vises), AI-ikonet fjernes, og var kortet
+  // Omskrivningen fjernes – originalen sættes tilbage (hvis den vises), AI-ikonet fjernes, og var kortet
   // omskrevet, tælles »Omskrevet« ned. Bruges af »Behold originalen« og når genkontrollen ikke gav en omskrivning
   function dropRewrite(el, c) {
     selfWrite(() => { if (c.showing === "ai" && c.nodes) el.replaceChildren(...c.nodes); el.querySelector(".unbait-toggle")?.remove(); });
@@ -1184,15 +1182,15 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     if (!c || !enabled) return;
     const group = sameStory(el);
     if (action === "keep") {
-      await chrome.runtime.sendMessage({ action: "keepOriginal", article: c.url, text: c.origText, keep: true }).catch(() => {});
+      await chrome.runtime.sendMessage({ action: "keepOriginal", article: c.url, text: c.origText, keep: true }).catch(warnErr("Behold originalen"));
       group.forEach(markKept); updateStatus(); return;
     }
-    if (action === "again") await chrome.runtime.sendMessage({ action: "keepOriginal", article: c.url, text: c.origText, keep: false }).catch(() => {});
+    if (action === "again") await chrome.runtime.sendMessage({ action: "keepOriginal", article: c.url, text: c.origText, keep: false }).catch(warnErr("Omskriv igen"));
     showStatus(action === "again" ? "Omskriver igen…" : "Prøver igen…");
     let res;
     try {
       const context = await fetchContext(el, c);
-      // v2.00: en reel uden beskrivelse sendes ikke til AI'en
+      // En reel uden beskrivelse sendes ikke til AI'en
       res = !context && jwReelId(c.url) ? null : await requestRewrite(c, context, crypto.randomUUID(), true);
     } catch (e) { res = { error: e.message || String(e) }; }
     flushPending();
@@ -1211,9 +1209,9 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
       (res?.error ? " (" + String(res.error).slice(0, 60) + ")" : res?.timeout ? " (AI svarede ikke i tide)" : ""), { error: !!res?.error });
   }
 
-  // v1.94: fælles for den almindelige omskrivning og »Prøv igen«/»Omskriv alligevel«
-  // Artiklens uddrag (højst 8 sekunder); huskes til »Skjul indhold« (egne ord tjekkes også i uddraget, v1.77) – men kun,
-  // hvis opgaven stadig gælder (valid): et uddrag fra den forrige artikel må ikke skjule den nye (v1.90, audit A-02)
+  // Fælles for den almindelige omskrivning og »Prøv igen«/»Omskriv alligevel«
+  // Artiklens uddrag (højst 8 sekunder); huskes til »Skjul indhold« (egne ord tjekkes også i uddraget) – men kun,
+  // hvis opgaven stadig gælder (valid): et uddrag fra den forrige artikel må ikke skjule den nye
   async function fetchContext(el, c, valid = () => true) {
     const context = await withTimeout(getContext(c.url, c.origText), CONTEXT_TIMEOUT_MS, "");
     if (context && valid()) excerptText.set(el, context.toLowerCase());
@@ -1237,16 +1235,16 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
       el.dataset.unbait = "error";
       return;
     }
-    if (res.cancelled) { delete el.dataset.unbait; return; }   // v1.64: annulleret før kaldet startede
-    if (res.kept) { markKept(el); return; }   // v1.91: »Behold originalen«
+    if (res.cancelled) { delete el.dataset.unbait; return; }   // Annulleret før kaldet startede
+    if (res.kept) { markKept(el); return; }   // »Behold originalen«
     if (res.skip) {
-      // v1.90 (audit A-01): en gammel omskrivning (fra cachen) blev vist, men genkontrollen af artiklen gav ingen
+      // En gammel omskrivning (fra cachen) blev vist, men genkontrollen af artiklen gav ingen
       // godkendt omskrivning: originalen sættes tilbage, og AI-ikonet fjernes – også hvis brugeren viste originalen
       if (c.rewritten) dropRewrite(el, c);
       el.dataset.unbait = "skipped";
       return;
     }
-    // Uændret efter tjek: intet ændres – heller ikke, hvis brugeren har klikket originalen frem (v1.94; før blev
+    // Uændret efter tjek: intet ændres – heller ikke, hvis brugeren har klikket originalen frem (ellers blev
     // omskrivningen vist igen og talt med to gange i »Omskrevet«)
     if (c.rewritten === res.rewritten) return;
     showRewrite(el, res.rewritten);
@@ -1260,10 +1258,10 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     try {
       const context = await fetchContext(el, c, () => alive(job));
       if (!alive(job)) return;
-      // v2.00: en reel på Se og Hør/Billed-Bladet uden beskrivelse hos JW Player sendes ikke til AI'en. En omskrivning
+      // En reel på Se og Hør/Billed-Bladet uden beskrivelse hos JW Player sendes ikke til AI'en. En omskrivning
       // fra cachen (genkontrol efter 2 timer) bliver stående, så en fejl hos JW Player ikke fjerner den
       if (!context && jwReelId(c.url)) { c.jobId = null; if (!c.rewritten) el.dataset.unbait = "skipped"; return; }
-      // v1.77: står et af brugerens ord i uddraget, skjules kortet nu, og intet sendes til AI'en
+      // Står et af brugerens ord i uddraget, skjules kortet nu, og intet sendes til AI'en
       if (context && hideActive() && hideCfg.words.length) {
         const root = cardRoot(el);
         const reason = hideReasonFor(el, root);
@@ -1272,7 +1270,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
       const res = await requestRewrite(c, context, jobId);
       if (!alive(job)) return;
       if (res && res.timeout) {
-        chrome.runtime.sendMessage({ action: "cancelJob", jobId }).catch(() => {});
+        chrome.runtime.sendMessage({ action: "cancelJob", jobId }).catch(() => {});   // opgaven kan være færdig
         if ((job.timeouts || 0) < 2) {
           job.timeouts = (job.timeouts || 0) + 1;
           later(() => { if (alive(job)) { pending.push(job); updateStatus(); pump(); } }, RETRY_WAIT_MS);
@@ -1306,7 +1304,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     const text = cleanText(el);
     if (!looksLikeHeadline(text)) return;
     if (inserted.get(el) === text) return; // vores egen AI-tekst – afvent sidens rigtige overskrift
-    if (noAIEl(el)) return; // BT's korte videoer (v1.30) og spil (v1.31) sendes ikke til AI'en
+    if (noAIEl(el)) return; // BT's korte videoer og spil sendes ikke til AI'en
     const c = { url: findArticleUrl(el), origText: text, label: cardLabel(el), showing: "original", jobToken: ++tokenSeq };
     cards.set(el, c);
     tracked.add(el);
@@ -1329,32 +1327,32 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
   }
 
   // ---------------------------------------------------------------------
-  // Find overskrifter, og hold øje med genbrugte nyhedskort (fund S03)
+  // Find overskrifter, og hold øje med genbrugte nyhedskort
   // ---------------------------------------------------------------------
   function selector() {
     // Se og Hørs undersider (/kendte, /nyheder/viralt …) har små kort med billede, mærkat og overskrift:
-    // <article><a href><…><h2>. Brugerens sider 24. okt. 2026 (v1.48)
-    // v2.02: også titlerne i Se og Hørs og Billed-Bladets video-karruseller (ALLER_SLIDE_TITLE)
+    // <article><a href><…><h2>
+    // Også titlerne i Se og Hørs og Billed-Bladets video-karruseller (ALLER_SLIDE_TITLE)
     if (SITE === "seoghoer") return ".dre-item__title, article > a[href] h2, " + ALLER_SLIDE_TITLE;
     if (SITE === "billedbladet") return ".dre-item__title, " + ALLER_SLIDE_TITLE;
-    // v2.02: også EB's sektionsliste (/nyheder/ …) og videolisten på artikelsiderne
+    // Også EB's sektionsliste (/nyheder/ …) og videolisten på artikelsiderne
     if (SITE === "eb") return ".dre-item__title, " + EB_LIST_ITEM + " h2.article-title, " + EB_VIDEO_CARD + " .video-clip-title";
     if (DRE_SITE) return ".dre-item__title";
     if (TEASER_SITE) return 'a[class*="TeaserLink"] h1, a[class*="TeaserLink"] h2, a[class*="TeaserLink"] h3, a[class*="TeaserLink"] [class*="itle"], a[class*="TeaserLink"]';
-    // De nye sider (v1.37), fundet på brugerens forsider 22. okt. 2026
-    // v1.76: DR's blok "Mere fra dr.dk" på artikelsiderne ("Indland lige nu", "Sport lige nu", "Seneste om kultur" …)
+    // De øvrige sider
+    // DR's blok "Mere fra dr.dk" på artikelsiderne ("Indland lige nu", "Sport lige nu", "Seneste om kultur" …)
     // har a.dre-teaser-title i #hydra-more-news, ikke hydra-klasserne
     if (SITE === "dr") return "a.hydra-card-title, a.hydra-teaser-title, #hydra-more-news a.dre-teaser-title";
     if (SITE === "politiken") return 'a[href*="/art"] :is(h1, h2, h3, h4, h5)';
-    // v1.95: JP's nye design (nov. 2026) – kortet er en <article> med et tomt link som lag over hele kortet og
+    // JP's nye design – kortet er en <article> med et tomt link som lag over hele kortet og
     // overskriften ved siden af linket. Nyhedsoverblikket øverst har stadig overskriften inde i linket.
     if (SITE === "jp") return 'a[href*="/ECE"] :is(h1, h2, h3, h4), article:has(> a[href*="/ECE"]) :is(h1, h2, h3, h4)';
     if (SITE === "avisen") return "a.FrontpageBox .Header";
-    // v1.80; v1.81: også boksen »Mest læste«; v1.96: også »Læs også« i artiklerne (h3.related-article__title i
+    // JFM: forsidekort, boksen »Mest læste« og »Læs også« i artiklerne (h3.related-article__title i
     // a.related-article__link i article.related-article; boksen sættes ind af sidens script efter indlæsningen)
     if (JFM) return ".teaser__title, .list-article__title, .related-article__title";
-    // v1.89: Y.dk – kun kort med et link (om overskriften eller som lag over kortet), ikke artikelsidens egen overskrift
-    // v1.90: også de grå tekstkort uden billede (article.bg-surface-toggle), hvor overskriften står i et <p>.
+    // Y.dk – kun kort med et link (om overskriften eller som lag over kortet), ikke artikelsidens egen overskrift
+    // Også de grå tekstkort uden billede (article.bg-surface-toggle), hvor overskriften står i et <p>.
     // Kun de grå kort – <p> i andre kort er underrubrikker
     if (YDK) return "article:has(> a[href]) :is(h1, h2, h3), a[href] :is(h1, h2, h3), article.bg-surface-toggle:has(> a[href]) > p";
     if (SITE === "nyheder24") return ".post-card .post-heading, a.recent-news-slider__item span.text-body-text";
@@ -1368,7 +1366,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     const urlChanged = findArticleUrl(el) !== c.url;
     const ourContentGone = c.showing === "ai" && (!el.contains(c.span) || c.span.textContent !== c.rewritten);
     const textChanged = c.showing !== "ai" && cleanText(el) !== c.origText;
-    // v1.90 (audit A-02): kortet viser nu en anden artikel – brugerens »vis alligevel« gjaldt den forrige
+    // Kortet viser nu en anden artikel – brugerens »vis alligevel« gjaldt den forrige
     if (ourContentGone || textChanged || urlChanged) revealed.delete(cardRoot(el));
     if (ourContentGone || textChanged) {
       resetCard(el, false);          // siden har selv skrevet ny tekst – den skal ikke overskrives
@@ -1379,7 +1377,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     }
   }
 
-  // v1.94: overskrifter, der venter på at komme i nærheden af skærmen. Scanningen læser ikke deres tekst igen
+  // Overskrifter, der venter på at komme i nærheden af skærmen. Scanningen læser ikke deres tekst igen
   // (det sker, når de kommer i syne – processOne tjekker den der)
   const waiting = new Set();
   const io = new IntersectionObserver((entries) => {
@@ -1397,7 +1395,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     try { scanInner(); } finally { scanText = null; }
   }
   function scanInner() {
-    // v1.90 (audit F-01): kort, som siden har fjernet, glemmes (og deres opgave annulleres), så de ikke fylder i hukommelsen
+    // Kort, som siden har fjernet, glemmes (og deres opgave annulleres), så de ikke fylder i hukommelsen
     for (const el of [...tracked]) if (!el.isConnected) resetCard(el, false);
     for (const el of waiting) if (!el.isConnected) { waiting.delete(el); io.unobserve(el); }
     const els = [...document.querySelectorAll(selector())];
@@ -1407,14 +1405,14 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     const carousel = SITE === "eb" ? [...document.querySelectorAll(CAROUSEL_ITEM)]
       : SITE === "bt" ? [...document.querySelectorAll(BT_PODCAST)] : [];
     const decided = new Map();
-    // v1.94: kendte kort tjekkes ikke igen her – det sker ved hver ændring på siden (touchedCards i handleMutations)
+    // Kendte kort tjekkes ikke igen her – det sker ved hver ændring på siden (touchedCards i handleMutations)
     for (const el of [...els, ...carousel]) {
       if (inExcludedRegion(el) || isOwn(el)) continue;
       const root = cardRoot(el);
       if (!decided.get(root)) decided.set(root, hideReasonFor(el, root));
     }
-    // v1.92: EB's salgsbannere for Ekstra Bladet+ (iframe fra …/bannerhtml/data/PLUS/… eller klik-lag til /kampagner/…)
-    // og Plus-salgsboksen nederst (.plus-footer) skjules under »Ekstra Bladet +« (brugerens ønske 8. nov. 2026)
+    // EB's salgsbannere for Ekstra Bladet+ (iframe fra …/bannerhtml/data/PLUS/… eller klik-lag til /kampagner/…)
+    // og Plus-salgsboksen nederst (.plus-footer) skjules under »Ekstra Bladet +«
     if (SITE === "eb") for (const box of ebPlusPromos())
       decided.set(box, hideActive() && hideCfg.plus && !revealed.has(box) ? "Ekstra Bladet+" : "");
     if (SITE === "avisen") for (const box of document.querySelectorAll(AVISEN_PARTNER))
@@ -1431,24 +1429,24 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     for (const el of els) {
       if (isHiddenEl(el)) continue;
       if (cards.has(el)) continue;
-      if (waiting.has(el)) { fresh.push(el); continue; }   // venter allerede (v1.94)
+      if (waiting.has(el)) { fresh.push(el); continue; }   // venter allerede
       if (!isCandidate(el)) continue;
-      if (noAIEl(el)) continue;      // BT's korte videoer (v1.30) og spil (v1.31) sendes ikke til AI'en
+      if (noAIEl(el)) continue;      // BT's korte videoer og spil sendes ikke til AI'en
       if (!looksLikeHeadline(cleanText(el))) continue;
       fresh.push(el);
     }
-    // Hvis både et element og et barn af det matcher, så brug kun barnet. v1.97 (M7): hvert element går op gennem sine
-    // forældre én gang (før blev alle par sammenlignet – kvadratisk i antallet af overskrifter)
+    // Hvis både et element og et barn af det matcher, så brug kun barnet. Hvert element går op gennem sine
+    // forældre én gang (ikke alle par sammenlignet, som ville være kvadratisk i antallet af overskrifter)
     const freshSet = new Set(fresh), hasChild = new Set();
     for (const el of fresh) for (let a = el.parentElement; a; a = a.parentElement) if (freshSet.has(a)) hasChild.add(a);
     fresh.filter(el => !waiting.has(el) && !hasChild.has(el)).forEach(el => { waiting.add(el); io.observe(el); });
-    // v1.94: kun når siden slet ingen overskrifter har (heller ingen fejlede, afviste, beholdte eller skjulte) – ellers
-    // bliver optællingen og en evt. fejlbesked stående (før: når intet var omskrevet, også hvis alle havde fejlet)
+    // Kun når siden slet ingen overskrifter har (heller ingen fejlede, afviste, beholdte eller skjulte) – ellers
+    // bliver optællingen og en evt. fejlbesked stående
     if (!fresh.length && !tracked.size && !hiddenRoots.size && !pending.length && !running) showStatus("Fandt ingen overskrifter (endnu)");
   }
 
   // ---------------------------------------------------------------------
-  // Tænd/sluk – fælles for alle faner via storage.sync (fund 02, 03, 04)
+  // Tænd/sluk – fælles for alle faner via storage.sync
   // ---------------------------------------------------------------------
   function turnOff() {
     enabled = false;
@@ -1469,9 +1467,9 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     scan();
   }
 
-  // Observeren oprettes altid, så nye nyhedskort også fanges, hvis UnbaitDK tændes senere (fund 04).
-  // Udvidelsens egne ændringer ignoreres, så statusboksen ikke udløser nye scanninger (fund S04).
-  // v1.94: scanningen venter på 400 ms ro, men højst SCAN_MAX_WAIT efter den første ændring – ellers kørte den aldrig
+  // Observeren oprettes altid, så nye nyhedskort også fanges, hvis UnbaitDK tændes senere.
+  // Udvidelsens egne ændringer ignoreres, så statusboksen ikke udløser nye scanninger.
+  // Scanningen venter på 400 ms ro, men højst SCAN_MAX_WAIT efter den første ændring – ellers kørte den aldrig
   // på sider, der ændrer sig hele tiden (et ur, en ticker), og nye kort blev ikke fundet
   const SCAN_QUIET = 400, SCAN_MAX_WAIT = 1000;
   let scanTimer = null, scanDue = 0;
@@ -1481,10 +1479,10 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     clearTimeout(scanTimer);
     scanTimer = setTimeout(() => { scanTimer = null; scanDue = 0; scan(); }, Math.max(0, Math.min(SCAN_QUIET, scanDue - now)));
   }
-  // v1.94: de kendte kort, en række ændringer kan have rørt – fundet ud fra ændringerne, ikke ved at gennemgå alle kort:
+  // De kendte kort, en række ændringer kan have rørt – fundet ud fra ændringerne, ikke ved at gennemgå alle kort:
   // ændringen er sket i kortet (samme område, som findArticleUrl finder linket i), inde i overskriften, på et link om
-  // overskriften, eller kortet er sat ind på ny. Før blev alle kendte kort tjekket ved hver ændring – også ved et ur
-  // uden for kortene. Fjernede kort glemmes ved næste scanning.
+  // overskriften, eller kortet er sat ind på ny. Så giver fx et ur uden for kortene ikke et tjek af
+  // alle kort. Fjernede kort glemmes ved næste scanning.
   const LINK_SCOPE = "article, [class*='teaser'], [class*='Teaser'], [class*='dre-item']";
   function touchedCards(mutations) {
     const out = new Set();
@@ -1504,13 +1502,13 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     return out;
   }
   // Siden har fjernet statusboksen eller udvidelsens stylesheet (fx DR, når sidens script overtager
-  // siden): de sættes ind igen med det samme. Indsættelsen ignoreres af filteret nedenfor (v1.40).
+  // siden): de sættes ind igen med det samme. Indsættelsen ignoreres af filteret nedenfor.
   function restoreOwn() {
     if (statusEl && !statusEl.isConnected) (document.body || document.documentElement).appendChild(statusEl);
     if (styleEl && !styleEl.isConnected) (document.head || document.documentElement).appendChild(styleEl);
   }
   function handleMutations(mutations) {
-    checkPath();                     // DR skifter side uden genindlæsning (v1.42)
+    checkPath();                     // DR skifter side uden genindlæsning
     restoreOwn();
     if (!enabled) return;
     const relevant = mutations.some(m => {
@@ -1526,12 +1524,12 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     for (const el of touchedCards(mutations)) checkReuse(el);
     scheduleScan();
   }
-  // Navnet under tælleren i statusboksen (v1.75: »+ flere«, når puljen kan bruges)
+  // Navnet under tælleren i statusboksen (»+ flere«, når puljen kan bruges)
   function refreshAiName() {
     chrome.runtime.sendMessage({ action: "getEnabled" }, (res) => {
       if (chrome.runtime.lastError || !res) return;
       aiName = res.model || "";
-      if (statusEl && lastStatus) showStatus(lastMsg, { error: lastIsError, detail: lastDetail });   // v1.94: samme besked og farve som før
+      if (statusEl && lastStatus) showStatus(lastMsg, { error: lastIsError, detail: lastDetail });   // Samme besked og farve som før navneskiftet
     });
   }
   // Baggrunden siger til, når nøglerne er ændret (dem kan indholdsscriptet ikke selv se)
@@ -1540,9 +1538,9 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
   mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["href"] });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    // v1.64: også modelskift hos OpenAI og OpenRouter (Gemini skifter udbyder med modellen)
-    // v1.75: også puljen og nøglerne (»+ flere« efter modelnavnet)
-    if (area === "sync" && (changes.provider || changes.openaiModel || changes.openrouterModel || changes.groqModel || changes.ollamaModel || changes.pool)) refreshAiName();
+    // Også modelskift hos OpenAI og OpenRouter (Gemini skifter udbyder med modellen)
+    // Også puljen og nøglerne (»+ flere« efter modelnavnet)
+    if (area === "sync" && (changes.provider || changes.openaiModel || changes.openrouterModel || changes.groqModel || changes.ollamaModel || changes.customModels || changes.pool)) refreshAiName();
     if (area === "sync" && Object.keys(HIDE_DEFAULTS).some(k => changes[k])) {
       // Nye skjul-indstillinger gælder med det samme
       loadHideCfg().then(() => { if (!enabled) return; unhideAll(); scan(); updateStatus(); });
@@ -1553,11 +1551,11 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     applyOnOff();
   });
 
-  // Sider (v1.37): er fluebenet for denne side fjernet i indstillingerne, gør unbAIt DK intet her –
+  // Sider: er fluebenet for denne side fjernet i indstillingerne, gør unbAIt DK intet her –
   // heller ingen statusboks. Det gælder også en side, der allerede er åben.
-  // Det samme gælder DR's TV- og lydsider (pathOff, v1.42).
+  // Det samme gælder DR's TV- og lydsider.
   let globalOn = false, siteOn = false, pathOff = offPath(), lastPath = location.pathname;
-  // v1.91: pause pr. medie fra Chromes højrekliksmenu. Hver JFM-avis har sin egen nøgle (»jfm:fyens.dk«)
+  // Pause pr. medie fra Chromes højrekliksmenu. Hver JFM-avis har sin egen nøgle (»jfm:fyens.dk«)
   const PAUSE = (() => {
     const s = UNBAIT_SITES.find(x => x.id === SITE);
     if (!s) return { key: "", name: "" };
@@ -1566,7 +1564,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     return { key: "jfm:" + d, name: d };
   })();
   let pausedHere = false;
-  const reportIcon = () => chrome.runtime.sendMessage({ action: "tabIcon", paused: globalOn && siteOn && !pathOff && pausedHere }).catch(() => {});
+  const reportIcon = () => chrome.runtime.sendMessage({ action: "tabIcon", paused: globalOn && siteOn && !pathOff && pausedHere }).catch(() => {});   // udvidelsen kan være genindlæst
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.action !== "pauseChanged") return;
     const p = Array.isArray(msg.paused) && msg.paused.includes(PAUSE.key);
@@ -1583,9 +1581,9 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     closeCardMenu();
     if (enabled) turnOff();
     if (!here) removeStatus();
-    else showStatus(globalOn && pausedHere ? `Pauset på ${PAUSE.name}` : "Slukket");   // v1.91
+    else showStatus(globalOn && pausedHere ? `Pauset på ${PAUSE.name}` : "Slukket");
   }
-  // Har siden skiftet adresse (uden genindlæsning) til eller fra DR's TV- og lydsider? (v1.42)
+  // Har siden skiftet adresse (uden genindlæsning) til eller fra DR's TV- og lydsider?
   let started = false;
   function checkPath() {
     if (location.pathname === lastPath) return;
@@ -1602,7 +1600,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.08);outline:none}
     aiName = res?.model || "";
     globalOn = res?.enabled !== false;
     siteOn = siteEnabled(res?.sites);
-    pausedHere = Array.isArray(res?.paused) && res.paused.includes(PAUSE.key);   // v1.91
+    pausedHere = Array.isArray(res?.paused) && res.paused.includes(PAUSE.key);
     started = true;
     checkPath();
     reportIcon();

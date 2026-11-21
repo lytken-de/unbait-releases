@@ -1,4 +1,4 @@
-// Indstillinger (v1.43): ord som mærker (chips) og valgknapper for visning af skjult indhold.
+// Indstillinger: ord som mærker (chips) og valgknapper for visning af skjult indhold.
 // De rigtige felter (#hideWords og #hideMode) er skjulte og bruges stadig af options.js.
 // Ligger i sin egen fil, fordi Chrome ikke kører scripts direkte i HTML på udvidelsens sider.
 (() => {

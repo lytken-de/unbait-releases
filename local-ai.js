@@ -1,7 +1,7 @@
 "use strict";
 // Skjult extension-dokument (offscreen), der kører Chromes indbyggede AI, hvis
 // LanguageModel ikke er tilgængeligt direkte i baggrundsscriptet. Sprogvalg, opstart og sessionen står i shared.js.
-const localPrompt = localSessionCache();   // v1.97: samme hjælper som baggrunden (shared.js)
+const localPrompt = localSessionCache();   // Samme hjælper som baggrunden (shared.js)
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target !== "local-ai") return false;

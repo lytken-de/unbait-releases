@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "unbAIt DK",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Erstatter clickbait-overskrifter på danske nyhedssider med neutrale overskrifter skrevet af AI. Du vælger selv AI-udbyderen.",
   "permissions": [
     "storage",
@@ -138,5 +138,5 @@
     }
   ],
   "author": "Thomas Lytken",
-  "version_name": "2.02"
+  "version_name": "2.03"
 }

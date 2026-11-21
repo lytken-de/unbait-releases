@@ -1,9 +1,9 @@
 "use strict";
 
 // Standardprompten (DEFAULT_PROMPT), ordgrænserne, udbydernavnene (PROVIDER_NAMES), NEEDS_KEY, DeepSeek-tiderne,
-// Chromes indbyggede AI og standardværdierne for Skjul indhold står i shared.js (v1.94)
+// Chromes indbyggede AI og standardværdierne for Skjul indhold står i shared.js
 
-// ---- Ordgrænser for kvalitetstjekket (v1.22) ----
+// ---- Ordgrænser for kvalitetstjekket ----
 function readWords() {
   return { first: parseInt($("maxFirst").value, 10), retry: parseInt($("maxRetry").value, 10) };
 }
@@ -16,38 +16,72 @@ function wordsError(w) {
 let standardPrompt = "";
 
 // ---- Udbydere: én fast model hver (kommer fra baggrundsscriptet) ----
-// AWS Bedrock (Gemma 4) er fjernet i v1.50
 const isLocal = (p) => p === "chrome_local";
-// Nøglefeltets pladsholder pr. udbyder – fra registret PROVIDERS (shared.js, v1.97)
+// Nøglefeltets pladsholder pr. udbyder – fra registret PROVIDERS
 const KEY_PLACEHOLDER = Object.fromEntries(Object.entries(PROVIDERS).filter(([, P]) => P.keyPlaceholder).map(([p, P]) => [p, P.keyPlaceholder]));
-// Egne gratis-grænser pr. udbyder (gratis Gemini og Groq) (v1.27)
+// Egne gratis-grænser pr. udbyder (gratis Gemini og Groq)
 let TIER_LIMITS = {}, TIER_DEFAULTS = {}, TIER_KEYS = {};
 const isTier = (t) => !!TIER_DEFAULTS[t];
 let currentTier = null;
-let paidPerUsd = 0;   // v1.75: estimeret omskrivninger pr. USD for den valgte betalte model (forsiden)
-let usage = null;   // dagens forbrug for den valgte gratis-tæller (v1.73)
-// OpenRouter (v1.51): modellerne i den ekstra liste (kommer fra baggrundsscriptet) og det gemte valg
-// ---- Én modelliste (v1.67) ----
+let paidPerUsd = 0;   // Estimeret omskrivninger pr. USD for den valgte betalte model (forsiden)
+let usage = null;   // dagens forbrug for den valgte gratis-tæller
+// OpenRouter: modellerne i den ekstra liste (kommer fra baggrundsscriptet) og det gemte valg
+// ---- Én modelliste ----
 // Baggrundsscriptet sender alle udbyderes modeller (modelGroups): gruppe = værdien i "AI-udbyder",
 // hvert punkt { value, name, provider, model?, paid? }. Gemini: de to modeller er to udbydere (gemini/gemini_free).
 let GROUPS = {};
-const chosenModel = { gemini: "gemini", kilo: "kilo", openai: "", openrouter: "", groq: "", ollama: "" };   // sidst valgte model pr. gruppe (gemmes i sync)
+const chosenModel = { gemini: "gemini", kilo: "kilo", openai: "", openrouter: "", groq: "", ollama: "", anthropic: "", deepseek: "" };   // sidst valgte model pr. gruppe (gemmes i sync)
 const GEMINI = ["gemini", "gemini_free"];
-// v1.85: også Kilo Code har to »modeller«, der er to udbydere (uden og med nøgle)
+// Også Kilo Code har to »modeller«, der er to udbydere (uden og med nøgle)
 const KILO = ["kilo", "kilo_key"];
 const groupOf = (p) => GEMINI.includes(p) ? "gemini" : KILO.includes(p) ? "kilo" : p;
 const group = () => $("provider").value;
-const choice = () => { const list = GROUPS[group()] || []; return list.find(m => m.value === $("model").value) || list[0] || {}; };
+const choice = () => {
+  const g = group(), list = GROUPS[g] || [];
+  if ($("model").value === CUSTOM_VALUE && CUSTOM_MODEL_PROVIDERS.includes(g)) return customItem(g);
+  return list.find(m => m.value === $("model").value) || list[0] || {};
+};
+// ---- Eget model-id (gruppen hedder det samme som udbyderen; ved Google Gemini den betalte) ----
+const customIds = {};   // det skrevne id pr. udbyder – huskes, også når en model i listen vælges
+const ownValid = (g) => isCustomModel(g, customIds[g] || "");
+// Uden et gyldigt id bruges listens første model, som i baggrunden
+function customItem(g) {
+  const id = customIds[g] || "", first = (GROUPS[g] || [])[0] || {};
+  if (!ownValid(g)) return { ...first, value: CUSTOM_VALUE, name: "Eget model-id", custom: true };
+  const tier = customTier(g, id);
+  if (tier && !TIER_DEFAULTS[tier] && g === "groq") { TIER_DEFAULTS[tier] = PROVIDERS.groq.tier.defaults; TIER_KEYS[tier] = groqTierDef(id).limitsKey; }
+  return { value: CUSTOM_VALUE, name: id, provider: g, model: id, custom: true, tier, statsKey: g + ":" + id, poolId: g + "|" + id };
+}
+const OWN_NAMES = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Google", deepseek: "DeepSeek", groq: "Groq", openrouter: "OpenRouter" };
+const OWN_EXTRA = { groq: " Egne gratis-grænser som GPT-OSS 120B; de kan rettes nedenfor.", openrouter: " Ender id'et på :free, tæller det med i OpenRouters gratis-grænse.",
+  gemini: " Bruger nøglen til den betalte Gemini." };
+function showCustom() {
+  const g = group(), on = $("model").value === CUSTOM_VALUE;
+  $("customModel").hidden = $("customHint").hidden = !on;
+  if (!on) return;
+  if (document.activeElement !== $("customModel")) $("customModel").value = customIds[g] || "";
+  $("customModel").placeholder = "Modellens id hos " + OWN_NAMES[g];
+  customHint();
+}
+function customHint() {
+  const g = group(), v = $("customModel").value.trim(), bad = !!v && !CUSTOM_ID_RE.test(v);
+  $("customHint").className = "hint" + (bad ? " warn" : "");
+  $("customHint").textContent = bad ? "Kun bogstaver, tal og . _ : / - @ (højst 100 tegn)."
+    : `Modellens id hos ${OWN_NAMES[g]}. Prisen kendes ikke for egne modeller, så Forbrug viser kun tokens.${OWN_EXTRA[g] || ""}`;
+}
+// Det, der gemmes i sync som customModels
+const customModelsOut = () => Object.fromEntries(CUSTOM_MODEL_PROVIDERS.filter(p => customIds[p] || chosenModel[p] === CUSTOM_VALUE)
+  .map(p => [p, { id: customIds[p] || "", on: chosenModel[p] === CUSTOM_VALUE }]));
 const chosenProvider = () => choice().provider || group();
 const orPaid = () => group() === "openrouter" && !!choice().paid;
 // Navnet på den valgte model
 const nameOf = () => choice().name || "";
-// v1.94: den valgte models tæller for gratis-grænser (null = ingen), forbrugstæller og id i puljen kommer fra baggrunden
+// Den valgte models tæller for gratis-grænser (null = ingen), forbrugstæller og id i puljen kommer fra baggrunden
 // (modelGroups) – fx har hver Groq-model sin egen tæller, og forbruget tælles pr. OpenAI-model og pr. betalt OpenRouter-model
 const tierOfChoice = () => choice().tier || null;
 const statsKeyOfChoice = () => choice().statsKey || chosenProvider();
 const poolIdOfChoice = () => choice().poolId || "";
-// ---- Ollama (v1.98, som i svAIr): listen hentes fra Ollama selv (»Hent modeller fra Ollama«); indtil da kun den gemte model ----
+// ---- Ollama: listen hentes fra Ollama selv (»Hent modeller fra Ollama«); indtil da kun den gemte model ----
 const ollamaItem = (n) => ({ value: n, name: n || "Ingen model valgt", provider: "ollama", model: n, tier: null, statsKey: "ollama", poolId: "" });
 function setOllamaModels(names) { GROUPS.ollama = names.length ? names.map(ollamaItem) : [ollamaItem("")]; }
 let ollamaFetched = false;
@@ -81,26 +115,73 @@ async function fetchOllama() {
       : r?.error === "offline" ? "Ingen forbindelse til Ollama på denne computer. Start Ollama, og prøv igen." : "Ollama svarede med en fejl" + (r?.status ? ` (HTTP ${r.status})` : "") + ".";
   }
 }
+function modelOption(value, name) {
+  const o = document.createElement("option"); o.value = value;
+  const dot = document.createElement("span"); dot.className = "mdot"; dot.setAttribute("aria-hidden", "true");
+  o.append(name, dot);
+  return o;
+}
 function fillModels() {
+  const g = group(), list = GROUPS[g] || [], own = CUSTOM_MODEL_PROVIDERS.includes(g);
+  const opts = list.map(m => modelOption(m.value, m.name));
+  if (own) { const o = modelOption(CUSTOM_VALUE, "Eget model-id…"); o.classList.add("own"); opts.push(document.createElement("hr"), o); }
+  $("model").replaceChildren(...$("model").querySelectorAll(":scope > button"), ...opts);
+  $("model").value = own && chosenModel[g] === CUSTOM_VALUE ? CUSTOM_VALUE : list.some(m => m.value === chosenModel[g]) ? chosenModel[g] : (list[0]?.value || "");
+  showCustom();
+  updateHealth();
+}
+
+// ---- Modellens status (modelHealth i storage.local, skrevet af baggrunden; modelHealthState i shared.js) ----
+let health = {};
+const HEALTH_TITLE = { ok: "Sidste kald lykkedes", old: "Ikke verificeret de seneste 14 dage", err: "Modellen/nøglen blev afvist – overvej at skifte", none: "Ingen data endnu" };
+const healthDate = (t) => new Date(t).toLocaleDateString("da-DK", { day: "numeric", month: "short", year: "numeric" });
+function healthOf(m) {
+  if (m.custom && !ownValid(m.provider)) return { state: "none" };
+  return modelHealthState(health, m.provider, m.model || PROVIDERS[m.provider]?.model || "");
+}
+const healthOfChoice = () => healthOf(choice());
+// Kort tekst: forsiden; lang tekst: linjen under »Model«
+const healthWords = (h) => h.state === "ok" ? "Virker" : h.state === "old" ? "Ikke verificeret de seneste 14 dage"
+  : h.state === "err" ? (h.kind === "key" ? "Nøglen blev afvist" : "Modellen blev afvist") : "";
+function setDot(d, h) { if (d) { d.dataset.st = h.state; d.title = HEALTH_TITLE[h.state]; } }
+function updateHealth() {
   const g = group(), list = GROUPS[g] || [];
-  $("model").replaceChildren(...$("model").querySelectorAll(":scope > button"), ...list.map(m => { const o = document.createElement("option"); o.value = m.value; o.textContent = m.name; return o; }));
-  $("model").value = list.some(m => m.value === chosenModel[g]) ? chosenModel[g] : (list[0]?.value || "");
+  for (const o of $("model").options) setDot(o.querySelector(".mdot"), healthOf(o.value === CUSTOM_VALUE ? customItem(g) : list.find(x => x.value === o.value) || {}));
+  const h = healthOfChoice();
+  setDot($("model").querySelector("selectedcontent .mdot"), h);
+  const st = $("modelStat");
+  st.hidden = false; st.dataset.st = h.state; st.title = HEALTH_TITLE[h.state];
+  st.textContent = h.state === "none" ? "Ingen data endnu" : `Sidst tjekket: ${healthDate(h.t)} · ${healthWords(h)}${h.state === "err" ? " – overvej at skifte" : ""}`;
+  updateHome();
+}
+// En ny eller ændret nøgle: udbyderens status starter forfra (grå), til næste kald
+async function clearHealthFor(providers) {
+  try {
+    const { modelHealth = {} } = await chrome.storage.local.get("modelHealth");
+    let n = 0;
+    for (const k of Object.keys(modelHealth)) if (providers.includes(k.split("|")[0])) { delete modelHealth[k]; n++; }
+    if (n) await chrome.storage.local.set({ modelHealth });
+  } catch (e) { warnErr("modellens status")(e); }
 }
 
 // ---- Nøgle pr. udbyder ----
 let apiKeys = {}, currentProvider = "openai";
+let savedKeys = {};   // nøglerne, som de sidst blev gemt (en ændret nøgle nulstiller modellens status)
 
-// ---- Pulje (v1.70): flere gratis modeller i prioriteret rækkefølge ----
+// ---- Pulje: flere gratis modeller i prioriteret rækkefølge ----
 // POOL_ENTRIES kommer fra baggrundsscriptet ({ id, provider, name }); chosenPool = de valgte id'er, øverst = først.
 let POOL_ENTRIES = [], chosenPool = [];
 const poolHasKey = (provider) => !NEEDS_KEY(provider) || !!(provider === currentProvider ? $("apiKey").value.trim() : apiKeys[provider]);
-const GRIP_SVG = '<svg viewBox="0 0 14 18" aria-hidden="true"><circle cx="4" cy="3" r="1.6"/><circle cx="10" cy="3" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="15" r="1.6"/><circle cx="10" cy="15" r="1.6"/></svg>';
+// En kopi af en <template> i options.html (fast markup uden innerHTML)
+const tpl = (id) => document.getElementById(id).content.cloneNode(true);
+// Panelets ikon: det samme som på knappen, der åbner panelet
+const panelIcon = (name) => document.querySelector(`[data-open="${name}"] svg`).cloneNode(true);
 // De valgte modeller i prioriteret rækkefølge, uden den valgte model (som altid er først)
 function poolPicked() {
   const me = poolIdOfChoice(), known = new Map(POOL_ENTRIES.map(e => [e.id, e]));
   return chosenPool.map(id => known.get(id)).filter(e => e && e.id !== me);
 }
-// Flytter en valgt model til plads "to" (0 = først) blandt de valgte (v1.71)
+// Flytter en valgt model til plads "to" (0 = først) blandt de valgte
 function poolMove(id, to) {
   const p = poolPicked().map(e => e.id), from = p.indexOf(id);
   if (from < 0) return;
@@ -120,8 +201,8 @@ function showPool(focusId) {
   const rows = [...picked, ...rest].map(e => {
     const on = chosenPool.includes(e.id), key = poolHasKey(e.provider), idx = picked.indexOf(e);
     const row = document.createElement("div"); row.className = "pool-row"; row.dataset.id = e.id;
-    // Håndtag til at trække i (v1.71); kun valgte modeller har en plads i rækkefølgen
-    const grip = document.createElement("button"); grip.type = "button"; grip.className = "grip" + (on ? "" : " none"); grip.innerHTML = GRIP_SVG;
+    // Håndtag til at trække i; kun valgte modeller har en plads i rækkefølgen
+    const grip = document.createElement("button"); grip.type = "button"; grip.className = "grip" + (on ? "" : " none"); grip.append(tpl("tplGrip"));
     grip.title = "Træk for at flytte (eller Alt + ↑/↓)"; grip.setAttribute("aria-label", "Flyt " + e.name + " (Alt + pil op/ned)");
     if (!on) grip.tabIndex = -1;
     const lab = document.createElement("label"); lab.className = "check" + (!on && !key ? " off" : "");
@@ -149,7 +230,7 @@ function showPool(focusId) {
   $("poolList").replaceChildren(...rows);
   if (focusId) $("poolList").querySelector(`[data-id="${CSS.escape(focusId)}"] .grip`)?.focus();
 }
-// Træk i håndtaget: en blå streg viser, hvor rækken lander (v1.71)
+// Træk i håndtaget: en blå streg viser, hvor rækken lander
 function startPoolDrag(ev, row, id) {
   if (ev.button !== 0) return;
   ev.preventDefault();
@@ -174,14 +255,14 @@ function startPoolDrag(ev, row, id) {
   addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
   move(ev);
 }
-// Højreklik-menu: Flyt op / ned / til top / til bund (v1.71)
+// Højreklik-menu: Flyt op / ned / til top / til bund
 let poolMenuId = null, poolMenuAt = 0;
 function closePoolMenu() { const m = $("poolMenu"); if (m) m.hidden = true; poolMenuId = null; }
 function openPoolMenu(x, y, id) {
   const m = $("poolMenu"), p = poolPicked(), i = p.findIndex(e => e.id === id);
   poolMenuId = id; poolMenuAt = performance.now();
-  // v1.90: menuen flyttes ud på selve siden. Inde i panelet blev den placeret i forhold til panelet (indglidnings-
-  // animationen på .db gør panelet til ramme for position: fixed) og endte uden for skærmen (fejl siden v1.73)
+  // Menuen flyttes ud på selve siden. Inde i panelet blev den placeret i forhold til panelet (indglidnings-
+  // animationen på .db gør panelet til ramme for position: fixed) og endte uden for skærmen
   if (m.parentElement !== document.body) document.body.append(m);
   m.querySelector("[data-a=up]").disabled = m.querySelector("[data-a=top]").disabled = i <= 0;
   m.querySelector("[data-a=down]").disabled = m.querySelector("[data-a=bottom]").disabled = i >= p.length - 1;
@@ -201,7 +282,7 @@ function initPoolMenu() {
   });
   addEventListener("pointerdown", (ev) => { if (!m.hidden && !m.contains(ev.target)) closePoolMenu(); });
   addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !m.hidden) { closePoolMenu(); ev.stopImmediatePropagation(); } });
-  addEventListener("scroll", () => { if (performance.now() - poolMenuAt > 300) closePoolMenu(); }, true);   // v1.73: en rulning lige før højreklikket lukker ikke menuen
+  addEventListener("scroll", () => { if (performance.now() - poolMenuAt > 300) closePoolMenu(); }, true);   // En rulning lige før højreklikket lukker ikke menuen
 }
 
 function $(id) { return document.getElementById(id); }
@@ -216,15 +297,15 @@ function keyFamily(key) {
   if (/^gsk_/.test(key)) return "groq";
   if (/^AIza/.test(key)) return "google";
   if (/^sk-ant-/.test(key)) return "anthropic";
-  if (/^sk-or-/.test(key)) return "openrouter";   // OpenRouter-nøgler (v1.51)
+  if (/^sk-or-/.test(key)) return "openrouter";   // OpenRouter-nøgler
   if (/^sk-/.test(key)) return "sk";
   return null;
 }
 function keyMismatch(provider, key) {
   if (!key || !NEEDS_KEY(provider)) return "";
   const fam = keyFamily(key);
-  // Amazon Nova (v1.38): nøglernes format kendes ikke, så kun nøgler, der tydeligt hører til andre, giver advarsel
-  if ((provider === "nova_free" || provider === "kilo_key") && (!fam || fam === "sk")) return "";   // v1.85: Kilos nøgleformat kendes ikke
+  // Amazon Nova: nøglernes format kendes ikke, så kun nøgler, der tydeligt hører til andre, giver advarsel
+  if ((provider === "nova_free" || provider === "kilo_key") && (!fam || fam === "sk")) return "";   // Kilos nøgleformat kendes ikke
   return fam && fam !== FAMILY[provider]
     ? `Nøglen ligner en ${FAMILY_NAMES[fam]}-nøgle, men udbyderen er sat til ${PROVIDER_NAMES[provider]}.`
     : "";
@@ -233,7 +314,7 @@ function keyMismatch(provider, key) {
 const KEY_HINT = "Gemmes kun i denne browser og synkroniseres ikke.";
 // Teksten under grænserne (hint i PROVIDERS)
 const FREE_HINTS = Object.fromEntries(Object.entries(PROVIDERS).filter(([, P]) => P.hint).map(([p, P]) => [p, P.hint]));
-// v1.87: Kilo Code har kun en grænse pr. time (RPH)
+// Kilo Code har kun en grænse pr. time (RPH)
 const isHourTier = (t) => !!TIER_DEFAULTS[t] && TIER_DEFAULTS[t].rph !== undefined;
 // Forbruget mod den grænse, der gælder: { used, limit, label, ring } (pr. time for Kilo, ellers pr. dag)
 function usedVsLimit(u, L, t = currentTier) {
@@ -241,32 +322,32 @@ function usedVsLimit(u, L, t = currentTier) {
   return { used: (u && u.requests) || 0, limit: L.rpd, label: "Brugt i dag", ring: "brugt i dag" };
 }
 
-// Noten i AI-kassens bund; ved OpenRouters Free Models Router en ekstra linje (v1.53)
+// Noten i AI-kassens bund; ved OpenRouters Free Models Router en ekstra linje
 const ROUTER_NOTE = "Den valgte model giver flere fejl end normalt.";
 function showAiNote() {
-  if (currentProvider === "ollama") { $("aiNote").textContent = "Overskrifterne omskrives én ad gangen og langsommere end hos online-udbydere."; return; }   // v1.98
+  if (currentProvider === "ollama") { $("aiNote").textContent = "Overskrifterne omskrives én ad gangen og langsommere end hos online-udbydere."; return; }
   const lines = ["Overskrifterne omskrives langsommere end med betalte udbydere."];
   if (currentProvider === "openrouter" && choice().model === "openrouter/free") lines.push(ROUTER_NOTE);
   $("aiNote").replaceChildren(...lines.flatMap((t, i) => i ? [document.createElement("br"), t] : [t]));
 }
 async function showFreeInfo() {
   const box = $("freeBox"), p = currentProvider, t = currentTier;
-  // Betalte OpenRouter-modeller (v1.62) har ingen gratis-grænser
+  // Betalte OpenRouter-modeller har ingen gratis-grænser
   if (!isTier(t) || (p === "openrouter" && orPaid())) { box.style.display = "none"; $("freeRow").style.display = "none"; $("aiNote").textContent = ""; if (p === "ollama") showAiNote(); usage = null; showStats(); return; }
   let u = { requests: 0, tokens: 0 };
   try { u = await chrome.runtime.sendMessage({ action: "freeUsage", tier: t }); } catch {}
   if (p !== currentProvider || t !== currentTier) return;
-  // "Brugt i dag" som række i listen under Model (v1.33)
+  // "Brugt i dag" som række i listen under Model
   usage = u;
   const note = document.createElement("span"); note.className = "st-note";
   note.textContent = p === "gemini_free" ? " nulstilles ca. kl. 9" : "";
-  if (isHourTier(t)) { const L = readLimits(t); $("freeRowK").textContent = "Brugt i denne time"; $("freeInfo").replaceChildren(`${nf((u.hour || []).length)} / ${nf(L.rph)} kald`); }   // v1.87
+  if (isHourTier(t)) { const L = readLimits(t); $("freeRowK").textContent = "Brugt i denne time"; $("freeInfo").replaceChildren(`${nf((u.hour || []).length)} / ${nf(L.rph)} kald`); }
   else { $("freeRowK").textContent = "Brugt i dag"; $("freeInfo").replaceChildren(`${nf(u.requests)} kald · ${nf(u.tokens)} tokens`, note); }
   $("freeRow").style.display = "";
   showAiNote();
   $("freeHint").textContent = FREE_HINTS[p] || "";
   box.style.display = "block";
-  showStats();   // v1.97 (M6): Forbrug og forsiden opdateres herfra – én gang, også ved udbyderskift (showProvider kalder ikke selv showStats)
+  showStats();   // Forbrug og forsiden opdateres herfra – én gang, også ved udbyderskift (showProvider kalder ikke selv showStats)
 }
 // ---- DeepSeek: dyr og billig tid ----
 // DeepSeek tager dobbelt pris på hverdage kl. 01–04 og 06–10 UTC (undtagen kinesiske helligdage; DEEPSEEK_PEAK_UTC og
@@ -279,7 +360,7 @@ function showPeakInfo() {
   const el = $("peakInfo");
   if (currentProvider !== "deepseek") { el.style.display = "none"; return; }
   const spans = DEEPSEEK_PEAK_UTC.map(([a, b]) => `${utcHourLocal(a)}–${utcHourLocal(b)}`).join(" og ");
-  // Teksten er brugerens egen formulering (v1.36)
+  // Teksten er brugerens egen formulering
   const now = isDeepseekPeak() ? "(Lige nu: dobbelt pris)" : "(Lige nu: normalpris)";
   el.textContent = `DeepSeek har dobbelt pris på hverdage kl. ${spans} (dansk tid). ` +
     `Resten af døgnet, i weekender samt på kinesiske helligdage gælder normalpris. ${now}.`;
@@ -289,7 +370,7 @@ setInterval(showPeakInfo, 60000);
 
 // ---- Eget forbrug for den valgte udbyder ----
 let lastStats = null;
-// v1.94: fælles for Forbrug-panelet og forsiden – »Siden 3. nov. kl. 14.05« og svartiden »1,2« (sekunder pr. kald)
+// Fælles for Forbrug-panelet og forsiden – »Siden 3. nov. kl. 14.05« og svartiden »1,2« (sekunder pr. kald)
 const sinceText = (t) => { const d = new Date(t); return "Siden " + d.toLocaleDateString("da-DK", { day: "numeric", month: "short" }) + " kl. " + d.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }); };
 const speedText = (s) => (s.ms / s.timed / 1000).toLocaleString("da-DK", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 async function showStats() {
@@ -300,7 +381,7 @@ async function showStats() {
   try { s = await chrome.runtime.sendMessage({ action: "tokenStats", provider: key }); } catch {}
   if (p !== currentProvider || key !== statsKeyOfChoice()) return;
   lastStats = s && s.calls ? s : null;
-  paidPerUsd = 0; if (!s || !s.calls) updateHome();   // v1.75: sættes igen nedenfor, når der er et tal
+  paidPerUsd = 0; if (!s || !s.calls) updateHome();   // Sættes igen nedenfor, når der er et tal
   const box = $("stats");
   const tiles = [];
   const tile = (label, value, note, span) => {
@@ -313,7 +394,7 @@ async function showStats() {
   const kpi = $("kpiStats");
   if (!s || !s.calls) {
     const empty = el("div", "empty");
-    empty.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-7M12 20V5M19 20v-10"/></svg>';
+    empty.append(panelIcon("stats"));
     empty.append(el("b", "", "Ingen kald endnu"), el("span", "", `Tallene dukker op, så snart unbAIt DK har omskrevet den første overskrift med ${nameOf() || "den valgte model"}.`));
     box.replaceChildren(empty);
     $("statsSince").textContent = "";
@@ -321,7 +402,7 @@ async function showStats() {
     kpi.firstChild.append(el("div", "num", "0"), el("div", "lbl", "godkendte omskrivninger"), el("div", "sub2", "af 0 kald"));
   } else {
     const hasOk = "ok" in s, hasRetries = "retries" in s;
-    // KPI: godkendte omskrivninger og godkendt-procent (v1.73)
+    // KPI: godkendte omskrivninger og godkendt-procent
     const left = el("div", "");
     left.append(el("div", "num", nf(hasOk ? s.ok : s.calls)), el("div", "lbl", hasOk ? "godkendte omskrivninger" : "kald"),
       el("div", "sub2", [hasOk ? `af ${nf(s.calls)} kald` : "", hasRetries ? `${nf(s.retries)} genforsøg` : ""].filter(Boolean).join(" · ")));
@@ -331,7 +412,7 @@ async function showStats() {
     if (isLocal(p)) {
       tile("Tokens", "Ingen", "kører lokalt, intet at betale for", true);
     } else {
-      const inTile = tile("Tokens ind", nf(s.input), p === "ollama" ? "kører lokalt, intet at betale for" : "", true);   // v1.98
+      const inTile = tile("Tokens ind", nf(s.input), p === "ollama" ? "kører lokalt, intet at betale for" : "", true);
       if (s.cached) {
         const pct = Math.min(100, s.cached / Math.max(1, s.input) * 100);
         const split = el("div", "split"); const bl = document.createElement("b"); bl.style.width = pct + "%"; const gr = document.createElement("i"); gr.style.width = (100 - pct) + "%"; split.append(bl, gr);
@@ -344,13 +425,13 @@ async function showStats() {
       tile("Tokens ud", nf(s.output), "modellens svar", !hasSpeed);
     }
     if (s.timed) tile("Svartid", `${speedText(s)} sek.`, "pr. kald", isLocal(p));
-    // Omskrivninger pr. USD, afrundet til hele hundreder fra 1.000 (v1.75: også på forsiden)
+    // Omskrivninger pr. USD, afrundet til hele hundreder fra 1.000 (også på forsiden)
     const perUsd = hasOk && s.cost > 0 && s.ok > 0 ? s.ok / s.cost : 0;
     paidPerUsd = perUsd ? (perUsd >= 1000 ? Math.round(perUsd / 100) * 100 : Math.round(perUsd)) : 0; updateHome();
     if (perUsd) tile("Estimeret omskrivninger pr. USD", "≈ " + nf(paidPerUsd), "", true);
     if (isTier(currentTier) && !orPaid() && usage) {
       const L = readLimits(currentTier), uv = usedVsLimit(usage, L);
-      const t = isHourTier(currentTier) ? tile(uv.label, `${nf(uv.used)} / ${nf(uv.limit)} kald`, "", true)   // v1.87
+      const t = isHourTier(currentTier) ? tile(uv.label, `${nf(uv.used)} / ${nf(uv.limit)} kald`, "", true)
         : tile("Brugt i dag", `${nf(usage.requests)} kald · ${nf(usage.tokens)} tokens`, "", true);
       const pct = uv.limit > 0 ? Math.min(100, uv.used / uv.limit * 100) : 0;
       const m = el("div", "meter"); const mb = document.createElement("b"); mb.style.width = pct + "%"; m.append(mb); t.append(m);
@@ -374,23 +455,23 @@ function showProvider(p) {
   const t = currentTier;
   $("apiKey").value = apiKeys[p] || "";
   $("apiKey").placeholder = KEY_PLACEHOLDER[p] || "";
-  // v1.84: nøglefeltet med »Test forbindelse« står altid; uden nøgle (Chrome indbygget AI, Kilo Code) kun knappen (og Kilos note)
+  // Nøglefeltet med »Test forbindelse« står altid; uden nøgle (Chrome indbygget AI, Kilo Code) kun knappen (og Kilos note)
   $("keyLb").style.display = $("keyHint").style.display = NEEDS_KEY(p) ? "" : "none";
   $("keyRow").querySelector(".keywrap").style.display = NEEDS_KEY(p) ? "" : "none";
   $("keyRow").classList.toggle("nokey", !NEEDS_KEY(p));
   $("kiloNote").style.display = p === "kilo" ? "" : "none";
-  $("kiloKeyNote").style.display = p === "kilo_key" ? "" : "none";   // v1.85
+  $("kiloKeyNote").style.display = p === "kilo_key" ? "" : "none";
   $("localBox").style.display = isLocal(p) ? "block" : "none";
-  $("ollamaBox").style.display = p === "ollama" ? "block" : "none";   // v1.98
+  $("ollamaBox").style.display = p === "ollama" ? "block" : "none";
   if (p !== "ollama") $("ollamaOrigins").hidden = true;
   if (isTier(t)) { const L = { ...TIER_DEFAULTS[t], ...(TIER_LIMITS[t] || {}) }; $("limRpm").value = L.rpm ?? ""; $("limRpd").value = L.rpd ?? ""; $("limTpm").value = L.tpm ?? ""; $("limTpd").value = L.tpd ?? ""; $("limRph").value = L.rph ?? ""; }
-  // v1.87: Kilo Code har kun »Kald pr. time (RPH)«; RPM og RPD skjules
+  // Kilo Code har kun »Kald pr. time (RPH)«; RPM og RPD skjules
   const hour = isHourTier(t);
   $("limRpm").parentElement.style.display = $("limRpd").parentElement.style.display = hour ? "none" : "";
   $("limRph").parentElement.style.display = hour ? "" : "none";
-  // Tokens pr. minut vises kun, når udbyderen har sådan en grænse (Amazon Nova har ikke) (v1.38)
+  // Tokens pr. minut vises kun, når udbyderen har sådan en grænse (Amazon Nova har ikke)
   $("limTpm").parentElement.style.display = isTier(t) && TIER_DEFAULTS[t].tpm === undefined ? "none" : "";
-  // Tokens pr. dag kun ved Groq (v1.69); med fire felter står de to og to
+  // Tokens pr. dag kun ved Groq; med fire felter står de to og to
   const hasTpd = isTier(t) && TIER_DEFAULTS[t].tpd !== undefined;
   $("limTpd").parentElement.style.display = hasTpd ? "" : "none";
   $("limGrid").className = hasTpd ? "g2" : hour ? "g1" : "g3";
@@ -442,10 +523,10 @@ async function downloadLocal() {
 function readLimits(tier = currentTier) {
   const D = TIER_DEFAULTS[tier] || TIER_DEFAULTS.gemini_free;
   const v = (id, d) => { const x = parseInt($(id).value, 10); return x > 0 ? x : d; };
-  if (D.rph !== undefined) return { rph: v("limRph", D.rph) };   // v1.87: Kilo Code
+  if (D.rph !== undefined) return { rph: v("limRph", D.rph) };   // Kilo Code
   const L = { rpm: v("limRpm", D.rpm), rpd: v("limRpd", D.rpd) };
   if (D.tpm !== undefined) L.tpm = v("limTpm", D.tpm);
-  if (D.tpd !== undefined) L.tpd = v("limTpd", D.tpd);   // v1.69
+  if (D.tpd !== undefined) L.tpd = v("limTpd", D.tpd);
   return L;
 }
 // Alle tælleres grænser, med felterne for den valgte udbyder og model
@@ -453,7 +534,7 @@ function allLimits() {
   return isTier(currentTier) ? { ...TIER_LIMITS, [currentTier]: readLimits(currentTier) } : { ...TIER_LIMITS };
 }
 
-// v1.97 (L6, brugerens valg 12. nov. 2026: »Feltet fyldes igen«): et tomt promptfelt gemmes som standardprompten (readForm),
+// Et tomt promptfelt gemmes som standardprompten (readForm),
 // og når feltet forlades – eller gemmes, mens det ikke har fokus – sættes standardprompten ind i feltet, så det viser det,
 // der gælder. Mens brugeren skriver i feltet, røres det ikke.
 function fillEmptyPrompt() {
@@ -496,10 +577,10 @@ function showHide(h) {
   $("hideGames").checked = !!h.hideGames;
   $("hideWords").value = h.hideWords || "";
   $("hideMode").value = h.hideMode === "dim" ? "dim" : "remove";
-  document.dispatchEvent(new Event("unbait:hide-shown"));   // options-ui.js viser mærker og valgknapper (v1.43)
+  document.dispatchEvent(new Event("unbait:hide-shown"));   // options-ui.js viser mærker og valgknapper
 }
 
-// ---- Sider (v1.37): hvilke sider unbAIt DK er aktiv på (gemmes i sync som "sites") ----
+// ---- Sider: hvilke sider unbAIt DK er aktiv på (gemmes i sync som "sites") ----
 function readSites() {
   return [...document.querySelectorAll("#sites input[data-site]:checked")].map(i => i.dataset.site);
 }
@@ -519,8 +600,8 @@ async function askSitePermission(input) {
   }
 }
 
-// ---- Status (v1.44: visningsfeltet i toppen): grønne beskeder forsvinder selv, fejl bliver stående ----
-// v1.97 (M5): samme form som statusboksen på nyhedssiden – showStatus(besked, { error }) (før betød 2. parameter »ok« her og »fejl« dér)
+// ---- Status (visningsfeltet i toppen): grønne beskeder forsvinder selv, fejl bliver stående ----
+// Samme form som statusboksen på nyhedssiden – showStatus(besked, { error })
 let statusTimer = null;
 function showStatus(msg, { error = false, hideAfter = error ? 0 : 5000 } = {}) {
   const el = $("status");
@@ -530,7 +611,7 @@ function showStatus(msg, { error = false, hideAfter = error ? 0 : 5000 } = {}) {
   el.className = "status " + (error ? "err" : "ok");
   $("statusMsg").textContent = msg;
   el.title = msg;                      // hele teksten, hvis den er for lang til feltet
-  $("statusClose").hidden = !error;    // v1.65: fejl bliver stående og kan lukkes med ×
+  $("statusClose").hidden = !error;    // Fejl bliver stående og kan lukkes med ×
   if (hideAfter) statusTimer = setTimeout(hideStatus, hideAfter);
 }
 function hideStatus() {
@@ -539,9 +620,9 @@ function hideStatus() {
   el.classList.add("hiding");
   statusTimer = setTimeout(() => { el.hidden = true; el.classList.remove("hiding"); el.title = ""; }, 400);
 }
-// »✓ Gemt« (v1.65): lille besked til venstre for feltet i 2 sekunder – overskriver aldrig en fejl
+// »✓ Gemt«: lille besked til venstre for feltet i 2 sekunder – overskriver aldrig en fejl
 let savedTimer = null;
-// ---- Ord/token-tæller under prompten (v1.67) ----
+// ---- Ord/token-tæller under prompten ----
 const PROMPT_TOKEN_LIMIT = 1000;
 function updatePromptCount() {
   const v = $("prompt").value.trim();
@@ -552,14 +633,14 @@ function updatePromptCount() {
   updateHome();
 }
 
-// ---- Log (v1.67): baggrundsscriptets beskeder fra storage.session ----
+// ---- Log: baggrundsscriptets beskeder fra storage.session ----
 let logFilter = "all";
 const LOG_LABEL = { info: "Info", warn: "Advarsel", error: "Fejl" };
 async function readLog() {
   try { return (await chrome.storage.session.get("logEntries")).logEntries || []; } catch { return []; }
 }
 const logTime = (t) => new Date(t).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).replace(/\./g, ":");
-// v1.91: søgning i loggen. Alle ord skal findes i beskeden og modelnavnet tilsammen (brugerens præcisering);
+// Søgning i loggen. Alle ord skal findes i beskeden og modelnavnet tilsammen;
 // store og små bogstaver er ligegyldige. Virker sammen med Alle/Advarsler/Fejl
 const logWords = () => ($("logSearch")?.value || "").toLowerCase().split(/\s+/).filter(Boolean);
 function logShown(all) {
@@ -584,14 +665,14 @@ async function showLog() {
     const row = document.createElement("div"); row.className = "lg " + e.level;
     const t = document.createElement("span"); t.className = "lt"; t.textContent = logTime(e.t);
     const b = document.createElement("span"); b.className = "lb"; b.textContent = LOG_LABEL[e.level] || e.level;
-    // v1.74: udbyder og model under ADVARSEL/FEJL (ikke ved info)
+    // Udbyder og model under ADVARSEL/FEJL (ikke ved info)
     if (e.model && e.level !== "info") { const md = document.createElement("span"); md.className = "mdl"; md.textContent = e.model; b.append(md); }
     const m = document.createElement("span"); m.className = "lm"; m.textContent = e.msg;   // altid som tekst
     row.append(t, b, m); return row;
   }));
 }
 async function copyLog() {
-  // v1.91: kun de viste beskeder (filter og søgning) – før altid hele loggen
+  // Kun de viste beskeder (filter og søgning)
   const text = logShown((await readLog()).slice().reverse()).map(e => `${logTime(e.t)} ${LOG_LABEL[e.level] || e.level}${e.model && e.level !== "info" ? " (" + e.model + ")" : ""}: ${e.msg}`).join("\n");
   try { await navigator.clipboard.writeText(text); showStatus("Loggen er kopieret."); }
   catch (e) { showStatus("Kunne ikke kopiere loggen: " + (e.message || e), { error: true }); }
@@ -603,7 +684,7 @@ function showSaved() {
   el.hidden = false; el.classList.remove("hiding");
   savedTimer = setTimeout(() => { el.classList.add("hiding"); savedTimer = setTimeout(() => { el.hidden = true; el.classList.remove("hiding"); }, 400); }, 2000);
 }
-// Resultatet af Test forbindelse vises under knappen (v1.65, brugerens mockup)
+// Resultatet af Test forbindelse vises under knappen
 function showTest(kind, title, detail = "") {
   const box = $("testResult");
   box.className = "test-res " + kind;
@@ -628,7 +709,7 @@ function testError(msg, provider) {
   return ["Forbindelsen fejlede", msg.length > 160 ? msg.slice(0, 157) + "…" : msg];
 }
 
-// ---- Automatisk gem (v1.44): ingen Gem-knap ----
+// ---- Automatisk gem: ingen Gem-knap ----
 // Flueben, valgknapper og udbyder gemmes med det samme. Tekstfelter gemmes efter en kort pause i
 // skrivningen (sync-lageret tåler kun et begrænset antal skrivninger i minuttet) eller når feltet forlades.
 // Ugyldige ordgrænser gemmes ikke; resten gemmes, og de sidst gyldige ordgrænser bliver stående.
@@ -640,7 +721,7 @@ function snapshot() {
   const clean = {};
   Object.keys(keys).sort().forEach(k => { if (keys[k]) clean[k] = keys[k]; });
   const f = readForm();
-  return JSON.stringify({ provider: f.provider, apiKeys: clean, prompt: f.prompt, limits: allLimits(), hide: readHide(), words: readWords(), sites: readSites(), models: chosenModel, pool: chosenPool });
+  return JSON.stringify({ provider: f.provider, apiKeys: clean, prompt: f.prompt, limits: allLimits(), hide: readHide(), words: readWords(), sites: readSites(), models: chosenModel, custom: customModelsOut(), pool: chosenPool });
 }
 function setSaveState(st) { document.documentElement.dataset.save = st; if (st !== "pending" && st !== "saving") idleState = st; }
 function changed(delay = 0) {
@@ -675,24 +756,28 @@ async function doSave() {
   try {
     // Begge skrivninger sendes af sted med det samme (ikke efter hinanden), så de også når frem, når siden lukkes
     await Promise.all([
-      // v1.69: alle tælleres grænser under deres egen lagernøgle (fx groqLimits, groqLimits:openai/gpt-oss-20b)
+      // Alle tælleres grænser under deres egen lagernøgle (fx groqLimits, groqLimits:openai/gpt-oss-20b)
       chrome.storage.local.set({ apiKeys: keys, ...Object.fromEntries(Object.entries(limits).filter(([t, L]) => L && TIER_KEYS[t]).map(([t, L]) => [TIER_KEYS[t], L])) }),
       chrome.storage.sync.set({ provider: s.provider, prompt: s.prompt, ...readHide(), maxWordsFirst: words.first, maxWordsRetry: words.retry, sites: readSites(),
-        openrouterModel: chosenModel.openrouter, openaiModel: chosenModel.openai, groqModel: chosenModel.groq, ollamaModel: chosenModel.ollama, pool: chosenPool })
+        openrouterModel: chosenModel.openrouter, openaiModel: chosenModel.openai, groqModel: chosenModel.groq, ollamaModel: chosenModel.ollama,
+        customModels: customModelsOut(), pool: chosenPool })
     ]);
   } catch (e) {
-    // Ændringerne er IKKE gemt – de bliver stående i felterne og prøves igen ved næste ændring (fund S07)
+    // Ændringerne er IKKE gemt – de bliver stående i felterne og prøves igen ved næste ændring
     apiKeys = before; apiKeys[currentProvider] = $("apiKey").value.trim();
     setSaveState("error");
     showStatus("Kunne ikke gemme: " + (e.message || e) + ". Dine ændringer er ikke gemt.", { error: true });
     return false;
   }
   TIER_LIMITS = limits;
+  const keyChanged = [...new Set([...Object.keys(savedKeys), ...Object.keys(keys)])].filter(p => (savedKeys[p] || "") !== (keys[p] || ""));
+  savedKeys = keys;
+  if (keyChanged.length) await clearHealthFor(keyChanged);
   savedWords = words;
   savedSnapshot = snap;
   setSaveState("saved");
-  showSaved();   // v1.65: altid den lille »✓ Gemt« – en fejl i feltet bliver stående
-  fillEmptyPrompt();   // v1.97 (L6): et tomt felt, der ikke har fokus, fyldes med den standardprompt, der blev gemt
+  showSaved();   // Altid den lille »✓ Gemt« – en fejl i feltet bliver stående
+  fillEmptyPrompt();   // Et tomt felt, der ikke har fokus, fyldes med den standardprompt, der blev gemt
   if (wErr) { showStatus(wErr + " Ordgrænserne er ikke gemt.", { error: true }); return true; }
   const warn = keyMismatch(s.provider, s.apiKey);
   if (warn) showStatus("Gemt, men bemærk: " + warn, { error: true });
@@ -710,25 +795,34 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Udbyder og prompt følger Chrome-kontoen (sync); nøgler ligger kun lokalt
   const data = await chrome.storage.sync.get({ provider: "openai", prompt: DEFAULT_PROMPT, ...HIDE_DEFAULTS,
-    maxWordsFirst: MAX_WORDS_FIRST, maxWordsRetry: MAX_WORDS_RETRY, standardPrompt: "", sites: null, openrouterModel: "", openaiModel: "", groqModel: "", ollamaModel: "", pool: [] });
-  chosenPool = (Array.isArray(data.pool) ? data.pool : []).filter(id => POOL_ENTRIES.some(e => e.id === id));   // v1.70
+    maxWordsFirst: MAX_WORDS_FIRST, maxWordsRetry: MAX_WORDS_RETRY, standardPrompt: "", sites: null, openrouterModel: "", openaiModel: "", groqModel: "", ollamaModel: "", customModels: {}, pool: [] });
+  chosenPool = (Array.isArray(data.pool) ? data.pool : []).filter(id => POOL_ENTRIES.some(e => e.id === id));
   // Gemte modeller hos OpenAI og OpenRouter; findes en ikke længere i listen, vælges den første
   const valid = (g, v) => (GROUPS[g] || []).some(m => m.value === v) ? v : (GROUPS[g]?.[0]?.value || "");
   chosenModel.openai = valid("openai", data.openaiModel);
   chosenModel.openrouter = valid("openrouter", data.openrouterModel);
   chosenModel.groq = valid("groq", data.groqModel);
-  chosenModel.ollama = typeof data.ollamaModel === "string" ? data.ollamaModel.trim() : "";   // v1.98
+  chosenModel.ollama = typeof data.ollamaModel === "string" ? data.ollamaModel.trim() : "";
   setOllamaModels(chosenModel.ollama ? [chosenModel.ollama] : []);
   standardPrompt = data.standardPrompt || "";
   $("maxFirst").value = data.maxWordsFirst; $("maxRetry").value = data.maxWordsRetry;
   showHide(data);
   showSites(data.sites);
   const local = await chrome.storage.local.get({ apiKeys: {} });
-  apiKeys = { ...local.apiKeys };
+  apiKeys = { ...local.apiKeys }; savedKeys = { ...apiKeys };
   const provider = isProvider(data.provider) ? data.provider : "openai";
 
   if (GEMINI.includes(provider)) chosenModel.gemini = provider;
   if (KILO.includes(provider)) chosenModel.kilo = provider;
+  // Eget model-id: det skrevne id huskes; »on« = valgt (ved Gemini kun, når den betalte er valgt)
+  const cm = isObj(data.customModels) ? data.customModels : {};
+  for (const p of CUSTOM_MODEL_PROVIDERS) {
+    const c = isObj(cm[p]) ? cm[p] : null;
+    if (c && CUSTOM_ID_RE.test(String(c.id || ""))) customIds[p] = String(c.id);
+    if (c?.on === true && !(p === "gemini" && provider === "gemini_free")) chosenModel[p] = CUSTOM_VALUE;
+  }
+  if (customIds.groq) { const k = groqTierDef(customIds.groq).limitsKey, got = (await chrome.storage.local.get(k))[k]; if (got) TIER_LIMITS["groq:" + customIds.groq] = got; }
+  health = (await chrome.storage.local.get("modelHealth")).modelHealth || {};
   $("provider").value = groupOf(provider);
   fillModels();
   $("prompt").value = data.prompt;
@@ -741,7 +835,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("statusClose").addEventListener("click", hideStatus);
   const providerChanged = () => {
-    clearTest();   // v1.65: et testresultat gælder kun den udbyder/model/nøgle, det blev lavet med
+    clearTest();   // Et testresultat gælder kun den udbyder/model/nøgle, det blev lavet med
     apiKeys[currentProvider] = $("apiKey").value.trim(); // husk det indtastede
     if (isTier(currentTier)) TIER_LIMITS[currentTier] = readLimits(currentTier);   // husk de indtastede grænser
     showProvider(chosenProvider());
@@ -749,7 +843,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
   $("provider").addEventListener("change", () => {
     fillModels(); providerChanged();
-    if (group() === "ollama" && !ollamaFetched) fetchOllama();   // v1.98: spørger om lov og henter modellerne
+    if (group() === "ollama" && !ollamaFetched) fetchOllama();   // Spørger om lov og henter modellerne
   });
   $("ollamaFetch").addEventListener("click", fetchOllama);
   $("ollamaCopy").addEventListener("click", async () => {
@@ -758,9 +852,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     setTimeout(() => { $("ollamaCopy").textContent = "Kopiér"; }, 2000);
   });
   // Modelskift: ved Gemini skifter udbyderen (gemini/gemini_free); ellers følger forbrug, noter og grænser modellen
-  $("model").addEventListener("change", () => { chosenModel[group()] = $("model").value; providerChanged(); });
-  $("apiKey").addEventListener("input", () => { updateKeyHint(); clearTest(); clearConn(); showPool(); changed(TYPE_PAUSE); });
-  // Øjet (v1.67): vis/skjul nøglen
+  $("model").addEventListener("change", () => {
+    chosenModel[group()] = $("model").value; showCustom(); providerChanged();
+    if ($("model").value === CUSTOM_VALUE && !$("customModel").value) $("customModel").focus();
+  });
+  $("customModel").addEventListener("input", customHint);
+  // Gemmes, når feltet forlades eller der trykkes Enter. Et id fra listen vælger modellen i listen
+  $("customModel").addEventListener("change", async () => {
+    const g = group(), v = $("customModel").value.trim();
+    if (v && !CUSTOM_ID_RE.test(v)) return;
+    const listed = (GROUPS[g] || []).find(m => (m.model || PROVIDERS[m.provider]?.model) === v && m.provider === g);
+    if (listed) { chosenModel[g] = listed.value; fillModels(); providerChanged(); return; }
+    customIds[g] = v;
+    if (g === "groq" && v) { const k = groqTierDef(v).limitsKey, got = (await chrome.storage.local.get(k))[k]; if (got) TIER_LIMITS["groq:" + v] = got; }
+    providerChanged(); updateHealth();
+  });
+  $("apiKey").addEventListener("input", () => { updateKeyHint(); clearTest(); showPool(); changed(TYPE_PAUSE); });
+  // Øjet: vis/skjul nøglen
   $("keyEye").addEventListener("click", () => {
     const show = $("apiKey").type === "password";
     $("apiKey").type = show ? "text" : "password";
@@ -769,22 +877,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     $("keyEye").title = show ? "Skjul nøgle" : "Vis nøgle";
   });
   $("prompt").addEventListener("input", updatePromptCount);
-  $("prompt").addEventListener("blur", () => { fillEmptyPrompt(); changed(); });   // v1.97 (L6)
+  $("prompt").addEventListener("blur", () => { fillEmptyPrompt(); changed(); });
   $("localDownload").addEventListener("click", downloadLocal);
-  // Forsiden og panelerne (v1.73)
+  // Forsiden og panelerne
   document.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openPanel(b.dataset.open, b)));
   $("dClose").addEventListener("click", closePanel);
   $("veil").addEventListener("click", closePanel);
   addEventListener("keydown", panelKeys);
-  try { conn = (await chrome.storage.session.get("conn")).conn || {}; } catch { conn = {}; }
-  // Log (v1.67)
+  // Log
   document.querySelectorAll("#logFilter button").forEach(b => b.addEventListener("click", () => { logFilter = b.dataset.f; showLog(); }));
   $("logCopy").addEventListener("click", copyLog);
   $("logClear").addEventListener("click", async () => { await chrome.storage.session.remove("logEntries"); showLog(); });
   $("logSearch").addEventListener("input", () => showLog());
-  initPromptSuggest();   // v1.91
-  initUpdateNotice();   // v1.92
-  initBackup();   // v1.92
+  initPromptSuggest();
+  initUpdateNotice();
+  initBackup();
   $("logSearchClear").addEventListener("click", () => { $("logSearch").value = ""; showLog(); $("logSearch").focus(); });
   chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.logEntries && currentPanel === "log") showLog(); });
   // Tekstfelter: gem efter en pause i skrivningen, og straks når feltet forlades
@@ -799,23 +906,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   addEventListener("pagehide", saveNow);
   document.addEventListener("visibilitychange", () => { if (document.hidden) saveNow(); });
 
-  // Gendan original (v1.63): udvidelsens oprindelige prompt; brugerens egen standard røres ikke
+  // Gendan original: udvidelsens oprindelige prompt; brugerens egen standard røres ikke
   $("restoreOriginal").addEventListener("click", async () => {
     $("prompt").value = DEFAULT_PROMPT; updatePromptCount();
     const ok = await saveNow();
     if (ok !== false || snapshot() === savedSnapshot) showStatus("Den oprindelige prompt er hentet ind og gemt.");
   });
-  // Gendan min standard (hed »Nulstil prompt« før v1.63): henter standardprompten ind i feltet og gemmer den med det samme (v1.44)
+  // Gendan min standard: henter standardprompten ind i feltet og gemmer den med det samme
   $("resetPrompt").addEventListener("click", async () => {
     $("prompt").value = standardPrompt || DEFAULT_PROMPT; updatePromptCount();
     const ok = await saveNow();
     if (ok !== false || snapshot() === savedSnapshot) showStatus("Din standardprompt er hentet ind og gemt.");
   });
-  // Sæt min standard (hed »Sæt som standard« før v1.63): gemmer den nuværende tekst som standardprompt med det samme
+  // Sæt min standard: gemmer den nuværende tekst som standardprompt med det samme
   $("setStandard").addEventListener("click", async () => {
     const t = $("prompt").value.trim();
     if (!t) { showStatus("Prompten er tom og kan ikke sættes som standard.", { error: true }); return; }
-    await saveNow();                   // en igangværende gemning må ikke overskrive beskeden nedenfor (v1.44)
+    await saveNow();                   // en igangværende gemning må ikke overskrive beskeden nedenfor
     try {
       await chrome.storage.sync.set({ standardPrompt: t });
       standardPrompt = t;
@@ -828,8 +935,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Tælleren opdateres løbende, mens siden er åben
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.tokenStats) showStats();
-    // "Brugt i dag" for gratis Gemini og Groq følger også med (v1.28)
-    if (area === "local" && (changes.freeUsage || changes.novaUsage || changes.openrouterUsage || changes.kiloUsage || changes.kiloKeyUsage || Object.keys(changes).some(k => k.startsWith("groqUsage")))) showFreeInfo();   // v1.69: én pr. Groq-model
+    if (area === "local" && changes.modelHealth) { health = changes.modelHealth.newValue || {}; updateHealth(); }
+    // "Brugt i dag" for gratis Gemini og Groq følger også med
+    if (area === "local" && (changes.freeUsage || changes.novaUsage || changes.openrouterUsage || changes.kiloUsage || changes.kiloKeyUsage || Object.keys(changes).some(k => k.startsWith("groqUsage")))) showFreeInfo();   // én pr. Groq-model
   });
   $("resetStats").addEventListener("click", async () => {
     try {
@@ -856,13 +964,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  let testSeq = 0;   // v1.91 (audit F-04): kun den nyeste test må vise sit resultat
+  let testSeq = 0;   // Kun den nyeste test må vise sit resultat
   $("test").addEventListener("click", async () => {
+    if (saveTimer || saving) await saveNow();   // en ny nøgle gemmes (og status nulstilles), før testen skriver sit resultat
     const s = readForm();
-    // v1.91 (audit F-04): navnet på den model, der testes, huskes nu – nameOf() læser altid det aktuelle valg
+    // Navnet på den model, der testes, huskes – nameOf() læser altid det aktuelle valg
     const testedName = nameOf(), myTest = ++testSeq;
-    const sameChoice = () => { const now = readForm(); return now.provider === s.provider && now.model === s.model; };
-    // v1.65: resultatet vises under knappen, ikke i feltet øverst
+    // Resultatet vises under knappen, ikke i feltet øverst
     if (!s.apiKey && NEEDS_KEY(s.provider)) { showTest("err", "Ingen API-nøgle", "Indsæt en nøgle i feltet ovenfor."); return; }
     const mm = keyMismatch(s.provider, s.apiKey);
     if (mm) { showTest("err", "Ugyldig API-nøgle", mm); return; }
@@ -870,15 +978,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       const res = await chrome.runtime.sendMessage({ action: "testAI", settings: s });
       if (myTest !== testSeq) return;   // en nyere test er startet – dette svar er forældet
-      // v1.90 (audit F-04): er udbyder eller model skiftet under testen, gælder resultatet ikke det nye valg –
-      // forbindelsesstatus røres ikke, og resultatet viser navnet på den testede model (v1.91)
-      if (sameChoice()) setConn(!res.error);
-      if (res.error) { showTest("err", ...testError(res.error, s.provider)); if (/OLLAMA_ORIGINS/.test(res.error)) showOllamaOrigins(true); }   // v1.98
+      // Er udbyder eller model skiftet under testen, gælder resultatet ikke det nye valg –
+      // forbindelsesstatus røres ikke, og resultatet viser navnet på den testede model
+      if (res.error) { showTest("err", ...testError(res.error, s.provider)); if (/OLLAMA_ORIGINS/.test(res.error)) showOllamaOrigins(true); }
       else showTest("ok", "Forbindelsen virker", `${testedName} svarede: "${res.rewritten}"`);
       showFreeInfo(); // testen tæller også med i den gratis kvote
     } catch (e) {
       if (myTest !== testSeq) return;
-      if (sameChoice()) setConn(false);
       showTest("err", "Forbindelsen fejlede", "Kunne ikke kontakte baggrundsscript: " + e.message);
     }
   });
@@ -886,20 +992,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
 // ======================================================================
-// Nyt design (v1.73): forside med overblik, paneler fra højre, KPI-bokser, ringe og token-måler
+// Nyt design: forside med overblik, paneler fra højre, KPI-bokser, ringe og token-måler
 // ======================================================================
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
-const SVG = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
-const ICONS = {
-  ai: SVG('<path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M19 15v5M16.5 17.5h5"/>'),
-  sites: SVG('<path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7 9h7M7 13h7"/>'),
-  hide: SVG('<path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4 9.5 6a12 12 0 0 1-2.3 3M6.6 7.6C4.5 9 3.1 11 2.5 12c1 2 4.5 6 9.5 6 1.4 0 2.6-.3 3.7-.8"/><path d="M9.9 10a3 3 0 0 0 4.1 4.1"/>'),
-  stats: SVG('<path d="M5 20v-7M12 20V5M19 20v-10"/>'),
-  prompt: SVG('<path d="M4 20l4-1 11-11a2.1 2.1 0 0 0-3-3L5 16z"/><path d="M14 7l3 3"/>'),
-  help: SVG('<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01"/>'),
-  log: SVG('<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'),
-  backup: SVG('<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>')
-};
 const PANELS = {
   ai: { title: "AI", sub: "Udbyder, model og nøgle" },
   sites: { title: "Sider", sub: "Hvor unbAIt DK er aktiv" },
@@ -932,15 +1027,15 @@ function openPanel(name, trigger) {
   document.querySelectorAll("#drawer .panel").forEach(pn => { pn.hidden = pn.id !== "pnl-" + name; });
   $("dTitle").textContent = m.title;
   $("dSub").textContent = m.sub; $("dSub").hidden = !m.sub && name !== "stats";
-  $("dIc").innerHTML = ICONS[name];
+  $("dIc").replaceChildren(panelIcon(name));
   $("drawer").classList.toggle("wide", !!m.wide);
   for (const e of [$("veil"), $("drawer")]) { e.classList.remove("closing"); e.hidden = false; }
   document.body.classList.add("locked");
   moveNotices(true);
   updateDrawerSub();
   $("drawer").scrollTop = 0;
-  if (name === "log") { $("logSearch").value = ""; showLog(); }   // v1.91: søgningen huskes ikke
-  if (name === "prompt") updateSuggestButtons();   // v1.91
+  if (name === "log") { $("logSearch").value = ""; showLog(); }   // Søgningen huskes ikke
+  if (name === "prompt") updateSuggestButtons();
   updateHome();
   $("dClose").focus({ preventScroll: true });
 }
@@ -961,13 +1056,13 @@ function closePanel() {
   closeTimer = setTimeout(done, 220);
 }
 function panelKeys(ev) {
-  // v1.92: bekræftelsen ved gendannelse: Esc lukker kun den; v1.94: Tab bliver i den
+  // Bekræftelsen ved gendannelse: Esc lukker kun den, og Tab bliver i den
   if (!$("bkVeil").hidden) {
     if (ev.key === "Escape") { ev.preventDefault(); closeBackupModal(); }
     else if (ev.key === "Tab") trapTab(ev, $("bkModal"), "button");
     return;
   }
-  // v1.91: er forslagsmodalen åben, styrer den tastaturet (Esc lukker kun modalen; Tab bliver i den)
+  // Er forslagsmodalen åben, styrer den tastaturet (Esc lukker kun modalen; Tab bliver i den)
   if (!$("pmVeil").hidden) {
     if (ev.key === "Escape") { ev.preventDefault(); closeSuggest(); return; }
     if (ev.key === "Tab") trapTab(ev, $("pm"), "button");
@@ -976,14 +1071,14 @@ function panelKeys(ev) {
   if (!currentPanel) return;
   if (ev.key === "Escape") {
     const a = document.activeElement;
-    // v1.91: Esc i søgefeltet med tekst rydder kun søgningen; tomt felt -> panelet lukkes som normalt
+    // Esc i søgefeltet med tekst rydder kun søgningen; tomt felt -> panelet lukkes som normalt
     if (a && a.id === "logSearch" && a.value) { ev.preventDefault(); a.value = ""; showLog(); return; }
     try { if (a && a.matches && a.matches("select:open")) return; } catch {}
     ev.preventDefault(); closePanel(); return;
   }
   if (ev.key === "Tab") trapTab(ev, $("drawer"), 'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])');   // fokus bliver i panelet
 }
-// v1.94: Tab og Shift+Tab bliver i boksen (panelet, forslagsmodalen eller bekræftelsen ved gendannelse): fra sidste til første og omvendt.
+// Tab og Shift+Tab bliver i boksen (panelet, forslagsmodalen eller bekræftelsen ved gendannelse): fra sidste til første og omvendt.
 // Står fokus uden for boksen, går Tab til det første og Shift+Tab til det sidste
 function trapTab(ev, box, selector) {
   const items = [...box.querySelectorAll(selector)].filter(x => !x.disabled && x.offsetParent !== null && x.tabIndex >= 0);
@@ -995,36 +1090,24 @@ function trapTab(ev, box, selector) {
 }
 
 // ---- Forbindelsen (seneste test pr. udbyder og model; gemmes, til browseren lukkes) ----
-let conn = {};
-const connKey = () => chosenProvider() + "|" + (choice().model || "");
-function saveConn() { try { chrome.storage.session.set({ conn }); } catch {} }
-function setConn(ok) { conn[connKey()] = ok; saveConn(); updateHome(); }
-function clearConn() { if (connKey() in conn) { delete conn[connKey()]; saveConn(); updateHome(); } }
 
 // ---- Ring og måler ----
 function ring(pct, label) {
   pct = Math.max(0, Math.min(100, pct || 0));
   const c = 2 * Math.PI * 50;
   const w = el("div", "ring2"); w.setAttribute("role", "img"); w.setAttribute("aria-label", `${pct} % ${label}`);
-  w.innerHTML = `<svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="50" fill="none" stroke-width="10"/>` +
-    `<circle cx="60" cy="60" r="50" fill="none" stroke="#2F7BF6" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(c * pct / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 60 60)"/></svg>`;
+  w.append(tpl("tplRing"));
+  w.querySelector(".val").setAttribute("stroke-dasharray", `${(c * pct / 100).toFixed(1)} ${c.toFixed(1)}`);
   const t = el("div", "rt"); t.append(el("b", "", pct + " %"), el("span", "", label)); w.append(t);
   return w;
 }
 const GAUGE_MAX = 1600;
-// v1.79: klasserne hedder z-… (»lg« var også loglinjernes klasse, så »Fin længde« fik loggens gitter og streg)
+// Klasserne hedder z-… (»lg« var også loglinjernes klasse, så »Fin længde« fik loggens gitter og streg)
 function gaugeZone(t) { return t <= 500 ? ["z-dg", "Kort og effektiv"] : t <= 800 ? ["z-lg", "Fin længde"] : t <= 1200 ? ["z-y", "Tæt på grænsen"] : ["z-r", "For lang"]; }
 function renderPromptKpi(words, tokens) {
   const k = $("kpiPrompt");
   if (!k.firstChild) {
-    k.innerHTML = '<div><div class="num" id="kpW"></div><div class="lbl">ord i prompten</div><div class="sub2" id="kpT"></div></div>' +
-      '<div class="gauge"><svg width="200" height="128" viewBox="0 0 200 128" role="img" id="gaugeSvg">' +
-      '<defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#15803D"/><stop offset="22%" stop-color="#22C55E"/><stop offset="42%" stop-color="#86EFAC"/>' +
-      '<stop offset="60%" stop-color="#EAB308"/><stop offset="80%" stop-color="#F59E0B"/><stop offset="92%" stop-color="#EF4444"/><stop offset="100%" stop-color="#DC2626"/></linearGradient></defs>' +
-      '<path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="url(#gg)" stroke-width="14" stroke-linecap="round"/>' +
-      '<g class="needle" id="needle" style="transform: translate(100px,100px) rotate(0deg)"><polygon points="-76,0 0,-2.4 8,0 0,2.4"/></g>' +
-      '<circle class="hub" cx="100" cy="100" r="5"/><text class="sc" x="20" y="124" text-anchor="middle">0</text><text class="sc" x="180" y="124" text-anchor="middle">1.600</text></svg>' +
-      '<div class="gv"><span id="gvTok"></span> tokens</div><div class="gz" id="gzTxt"></div></div>';
+    k.replaceChildren(tpl("tplPromptKpi"));
   }
   $("kpW").textContent = nf(words);
   $("kpT").textContent = `ca. ${nf(tokens)} tokens pr. kald`;
@@ -1057,7 +1140,7 @@ function hideInfo() {
   const elems = [h.hidePlus && "Ekstra Bladet +", h.hideAds && "Annoncer (Ekstra Bladet)", h.hideGames && "Spil", h.hideAdsAvisen && "Annoncer (Avisen.dk)", h.hideAdsAller && "Annoncer (Se og Hør og Billed-Bladet)", h.skipReelAds && "Reklamer i reels (Berlingske og B.T.)"].filter(Boolean);
   return { cats, words, elems, total: cats.length + words.length + elems.length, mode: h.hideMode === "dim" ? "vises som tynd linje" : "fjernes helt" };
 }
-// v1.97 (M6): forsiden genopbygges højst én gang pr. omgang – kaldene (tastetryk, udbyderskift, forbrug) samles i én kort pause
+// Forsiden genopbygges højst én gang pr. omgang – kaldene (tastetryk, udbyderskift, forbrug) samles i én kort pause
 let homeTimer = null;
 function updateHome() {
   if (homeTimer) return;
@@ -1065,29 +1148,34 @@ function updateHome() {
 }
 function updateHomeNow() {
   if (!$("heroTitle") || !GROUPS || !Object.keys(GROUPS).length) return;
-  const free = isTier(currentTier) && !orPaid(), local = isLocal(currentProvider) || currentProvider === "ollama";   // v1.98: Ollama kører også lokalt
+  const free = isTier(currentTier) && !orPaid(), local = isLocal(currentProvider) || currentProvider === "ollama";   // Ollama kører også lokalt
   const sites = [...document.querySelectorAll("#sites input[data-site]")];
-  // v1.82: JFM-medier er ét flueben, men tæller som de sider, det dækker (20)
+  // JFM-medier er ét flueben, men tæller som de sider, det dækker (20)
   const weight = (i) => i.dataset.site === "jfm" ? ((typeof UNBAIT_SITES !== "undefined" && UNBAIT_SITES.find(x => x.id === "jfm")?.matches.length) || 1) : 1;
   const count = (list) => list.reduce((a, i) => a + weight(i), 0);
   const on = sites.filter(i => i.checked), n = count(on), total = count(sites);
   const short = modelShort(), full = nameOf();
-  const known = conn[connKey()];
+  const hh = healthOfChoice(), hcls = hh.state === "err" ? " err" : hh.state === "old" ? " warn" : "";
+  const hword = hh.state === "ok" ? "Forbindelsen virker" : healthWords(hh);
 
   // Hero
   const sp = el("span", "", "med " + short);
   $("heroTitle").replaceChildren(`Omskriver på ${n} ${n === 1 ? "side" : "sider"}`, document.createElement("br"), sp);
   const hc = $("heroConn");
-  hc.hidden = known === undefined; hc.className = "eyebrow" + (known === false ? " err" : "");
-  hc.lastChild.textContent = known === false ? "Forbindelsen fejlede" : "Forbindelsen virker";
+  hc.hidden = hh.state === "none"; hc.className = "eyebrow" + hcls; hc.title = HEALTH_TITLE[hh.state];
+  hc.lastChild.textContent = hword;
   let label, note = "", big, small = "", meter = null;
   if (local) { label = "Kører lokalt"; big = "Gratis"; small = "intet sendes ud"; }
-  else if (!free) { label = "Estimeret omskrivninger pr. USD"; big = paidPerUsd ? "≈ " + nf(paidPerUsd) : "Ingen kald endnu"; }   // v1.75
+  else if (!free) {
+    label = "Estimeret omskrivninger pr. USD";
+    const own = choice().custom && ownValid(group());   // eget model-id: prisen kendes ikke
+    big = own ? "Pris ukendt" : paidPerUsd ? "≈ " + nf(paidPerUsd) : "Ingen kald endnu"; small = own ? "eget model-id" : "";
+  }
   else {
     note = currentProvider === "gemini_free" ? "nulstilles ca. kl. 9" : "";
     const u = usage || { requests: 0, tokens: 0 }, L = readLimits(currentTier), uv = usedVsLimit(u, L);
     label = uv.label; big = nf(uv.used);
-    small = isHourTier(currentTier) ? `/ ${nf(uv.limit)} kald` : `/ ${nf(L.rpd)} kald · ${nf(u.tokens)} tokens`;   // v1.87: Kilo pr. time
+    small = isHourTier(currentTier) ? `/ ${nf(uv.limit)} kald` : `/ ${nf(L.rpd)} kald · ${nf(u.tokens)} tokens`;   // Kilo pr. time
     meter = uv.limit > 0 ? Math.min(100, uv.used / uv.limit * 100) : 0;
   }
   $("todayLabel").textContent = label; $("todayNote").textContent = note; $("todayBig").textContent = big; $("todaySmall").textContent = small;
@@ -1118,7 +1206,7 @@ function updateHomeNow() {
   const left = el("div", "");
   left.append(el("div", "small", PROVIDER_NAMES[chosenProvider()] || ""));
   const mn = el("div", "modelname", short); mn.title = full; left.append(mn);
-  if (known !== undefined) { const c = el("div", "conn" + (known === false ? " err" : "")); c.append(document.createElement("i"), known === false ? "Forbindelsen fejlede" : "Forbindelsen virker"); left.append(c); }
+  if (hh.state !== "none") { const c = el("div", "conn" + hcls); c.title = HEALTH_TITLE[hh.state]; c.append(document.createElement("i"), hword); left.append(c); }
   const kai = [left];
   if (free) { const u = usage || { requests: 0 }, uv = usedVsLimit(u, readLimits(currentTier)); kai.push(ring(uv.limit > 0 ? Math.round(uv.used / uv.limit * 100) : 0, uv.ring)); }
   $("kpiAi").replaceChildren(...kai);
@@ -1138,10 +1226,10 @@ function updateHomeNow() {
 
 
 // ======================================================================
-// v1.91: »Få forslag til prompten« (brugerens ønske 6. nov. 2026, preview godkendt). Den valgte model vurderer
+// »Få forslag til prompten«. Den valgte model vurderer
 // prompten; svaret vises i en modal med Vurdering, Ændringsforslag og Foreslået prompt. »Brug forslag« gemmer den
 // tidligere prompt (promptPrevious), så »Fortryd: gendan forrige prompt« kan sætte den tilbage. Ikke med Chromes
-// indbyggede AI (for svag til opgaven – brugerens valg).
+// indbyggede AI.
 // ======================================================================
 let suggestSeq = 0, suggestion = null, suggestFrom = null;
 async function updateSuggestButtons() {
@@ -1159,7 +1247,7 @@ function closeSuggest() {
 function renderSuggest(state, data = {}) {
   const body = $("pmBody"); body.replaceChildren();
   $("pmUse").disabled = $("pmCopy").disabled = state !== "ok" || !data.prompt;
-  if (state === "busy") {   // v1.91: animerede prikker i stedet for »…«
+  if (state === "busy") {   // Animerede prikker i stedet for »…«
     const p = el("p", "", `Henter forslag fra ${data.model}`), d = el("span", "dots"); d.setAttribute("aria-hidden", "true");
     p.append(d); body.append(p); return;
   }
@@ -1228,10 +1316,10 @@ function initPromptSuggest() {
 
 
 // ======================================================================
-// v1.92: besked om ny version (preview godkendt 8. nov. 2026). Vises øverst på forsiden, når release-repoet har en
+// Besked om ny version. Vises øverst på forsiden, når release-repoet har en
 // nyere version end den installerede, og brugeren ikke har trykket »Senere« for netop den version. Er udvidelsen
 // indlæst fra en git-mappe (.git/HEAD kan læses), vises git-vejledningen; ellers zip-vejledningen med knappen
-// »Hent version …«. Ingen indstilling – det afgøres automatisk (brugerens valg 8. nov.).
+// »Hent version …«. Ingen indstilling – det afgøres automatisk.
 // ======================================================================
 async function isGitFolder() {
   try { const r = await fetch(chrome.runtime.getURL(".git/HEAD"), { cache: "no-store" }); return r.ok && /^ref:|^[0-9a-f]{40}/.test((await r.text()).trim()); } catch { return false; }
@@ -1254,13 +1342,13 @@ async function initUpdateNotice() {
     $("updGet").textContent = `Hent version ${info.latest}`; $("updGet").hidden = false;
     $("updGet").onclick = () => { if (UPDATE_ZIP.test(info.zip)) window.open(info.zip, "_blank", "noopener"); };   // UPDATE_ZIP i shared.js
   }
-  $("updLater").onclick = async () => { await chrome.storage.local.set({ updateDismissed: info.latest }).catch(() => {}); $("upd").hidden = true; };
+  $("updLater").onclick = async () => { await chrome.storage.local.set({ updateDismissed: info.latest }).catch(warnErr("Senere")); $("upd").hidden = true; };
   $("upd").hidden = false;
 }
 
 
 // ======================================================================
-// v1.92: sikkerhedskopi (brugerens ønske 8. nov. 2026, preview godkendt; filendelse .unbait).
+// Sikkerhedskopi (filendelse .unbait).
 // Filen: første linje »unbAIt DK backup 1«, derefter indholdet som base64 (sløret, ikke krypteret).
 // Med: alt i storage.sync (udbyder, modeller, pulje, sider, Skjul indhold, prompt, standardprompt, ordgrænser …),
 // grænserne for gratis kald (…Limits i storage.local) og »Behold originalen« (keptArticles). API-nøgler kun med
@@ -1328,9 +1416,9 @@ async function showRestore(data) {
   bkPending = { data, missing };
   $("bkVeil").hidden = false; $("bkCancel").focus({ preventScroll: true });
 }
-// v1.97: det, en sikkerhedskopi må sætte i storage.sync (nøglerne i dokumentationens afsnit 2) og værdiernes type.
+// Det, en sikkerhedskopi må sætte i storage.sync (nøglerne i dokumentationens afsnit 2) og værdiernes type.
 // Ukendte nøgler, forkerte typer og en udbyder, der ikke findes, springes over (resten gendannes).
-const SYNC_TYPES = { enabled: "boolean", provider: "string", openaiModel: "string", openrouterModel: "string", groqModel: "string", ollamaModel: "string", pool: "array",
+const SYNC_TYPES = { enabled: "boolean", provider: "string", openaiModel: "string", openrouterModel: "string", groqModel: "string", ollamaModel: "string", customModels: "object", pool: "array",
   prompt: "string", standardPrompt: "string", maxWordsFirst: "number", maxWordsRetry: "number", sites: "array", hideCats: "array",
   hidePlus: "boolean", hideAds: "boolean", hideAdsAvisen: "boolean", hideAdsAller: "boolean", skipReelAds: "boolean", hideGames: "boolean", hideWords: "string", hideMode: "string" };
 function cleanSync(sync) {
@@ -1340,6 +1428,12 @@ function cleanSync(sync) {
     if (t === "array" ? Array.isArray(v) : typeof v === t) out[k] = v;
   }
   if ("provider" in out && !isProvider(out.provider)) delete out.provider;
+  // Eget model-id: kun kendte udbydere med { id: gyldigt id, on: true/false }
+  if ("customModels" in out) {
+    const cm = out.customModels && !Array.isArray(out.customModels) ? out.customModels : {};
+    out.customModels = Object.fromEntries(CUSTOM_MODEL_PROVIDERS.filter(p => cm[p] && CUSTOM_ID_RE.test(String(cm[p].id || "")))
+      .map(p => [p, { id: String(cm[p].id), on: cm[p].on === true }]));
+  }
   return out;
 }
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -1351,8 +1445,8 @@ async function doRestore() {
   // Chromes tilladelse skal bedes om med det samme (klikket på »Gendan« tæller som brugerens handling)
   let granted = true;
   if (missing.length) granted = await chrome.permissions.request({ origins: missing.flatMap(x => x.matches) }).catch(() => false);
-  // v1.97: først skrives det nye, derefter fjernes det, der ikke er i kopien. Fejler skrivningen (fx sync-lagerets
-  // kvote), er intet ændret, og de nuværende indstillinger står urørt (før blev lageret tømt først).
+  // Først skrives det nye, derefter fjernes det, der ikke er i kopien. Fejler skrivningen (fx sync-lagerets
+  // kvote), er intet ændret, og de nuværende indstillinger står urørt.
   const before = await chrome.storage.sync.get(null);
   await chrome.storage.sync.set(sync);
   const stale = Object.keys(before).filter(k => !(k in sync));
@@ -1399,5 +1493,5 @@ function initBackup() {
     if (!r || Date.now() - r.at > 60000) return;
     chrome.storage.local.remove("backupRestored");
     showStatus("Sikkerhedskopien er gendannet." + (r.missingDenied?.length ? ` Chrome gav ikke lov til ${r.missingDenied.join(" og ")} – sæt flueben under Sider igen for at prøve igen.` : ""), { error: !!r.missingDenied?.length });
-  }).catch(() => {});
+  }).catch(warnErr("besked om gendannelse"));
 }
