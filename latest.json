@@ -1,5 +1,5 @@
 {
-  "version": "2.04",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.04-chrome.zip",
-  "notes": "Tekstfelterne får en tydelig blå kant, når du skriver i dem. Lader du feltet til eget model-id stå tomt, får du at vide, hvilken model der bruges i stedet, og listen går tilbage til den."
+  "version": "2.05",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.05-chrome.zip",
+  "notes": "Ny knap med sol og måne øverst på indstillingssiden skifter mellem lyst og mørkt tema. OpenRouter har fået modellen GPT-OSS 20B, som kun kører hos Amazon Bedrock i EU (Irland)."
 }

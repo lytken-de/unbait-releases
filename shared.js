@@ -117,9 +117,14 @@ const PROVIDERS = {
       { id: "openrouter/free", name: "Free Models Router" },
       { id: "google/gemma-4-31b-it:free", name: "Google Gemma 4 31B (free)" },
       { id: "nvidia/nemotron-3.5-lightning:free", name: "Nemotron 3.5 Lightning (free)" },
-      { id: "mistralai/mistral-small-24b-instruct-2501", name: "Mistral Small 3 (paid)", paid: true, prices: { in: 0.05, cache: 0.05, out: 0.08 } }
+      { id: "mistralai/mistral-small-24b-instruct-2501", name: "Mistral Small 3 (paid)", paid: true, prices: { in: 0.05, cache: 0.05, out: 0.08 } },
+      // Kun Amazon Bedrock i eu-west-1, aldrig en anden udbyder. GPT-OSS kan ikke slå tænkningen fra: lav tænkning, ikke med i svaret
+      { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B · Bedrock EU (paid)", paid: true, prices: { in: 0.07, cache: 0.07, out: 0.15 },
+        body: { max_tokens: 2000, reasoning: { effort: "low", exclude: true }, provider: { only: ["amazon-bedrock/eu-west-1"], allow_fallbacks: false } } }
     ],
-    url: "https://openrouter.ai/api/v1/chat/completions", body: () => ({ max_tokens: 300, temperature: 0.3, reasoning: { effort: "none" } }),
+    // Modellens egne felter (body i listen) erstatter standardfelterne
+    url: "https://openrouter.ai/api/v1/chat/completions", body: (model) => ({ max_tokens: 300, temperature: 0.3, reasoning: { effort: "none" },
+      ...PROVIDERS.openrouter.models.find(m => m.id === model)?.body }),
     tier: { limitsKey: "openrouterLimits", usageKey: "openrouterUsage", defaults: { rpm: 20, rpd: 50 }, day: utcDay,
       dayMsg: (n) => `Dagens OpenRouter-grænse er nået (${n} forespørgsler)` },
     hint: "unbAIt DK's egne grænser for gratis-niveauet. Tjek dine faktiske grænser på openrouter.ai under Settings." },
