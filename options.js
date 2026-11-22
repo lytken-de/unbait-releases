@@ -65,7 +65,12 @@ function showCustom() {
 }
 function customHint() {
   const g = group(), v = $("customModel").value.trim(), bad = !!v && !CUSTOM_ID_RE.test(v);
-  $("customHint").className = "hint" + (bad ? " warn" : "");
+  $("customHint").className = "hint" + (bad || !v ? " warn" : "");
+  if (!v) {   // Tomt felt: baggrunden bruger listens første model, til et id er skrevet
+    const name = document.createElement("span"); name.className = "nw"; name.textContent = (GROUPS[g] || [])[0]?.name || "";
+    $("customHint").replaceChildren("Skriv modellens id. Indtil da bruges ", name, ".");
+    return;
+  }
   $("customHint").textContent = bad ? "Kun bogstaver, tal og . _ : / - @ (højst 100 tegn)."
     : `Modellens id hos ${OWN_NAMES[g]}. Prisen kendes ikke for egne modeller, så Forbrug viser kun tokens.${OWN_EXTRA[g] || ""}`;
 }
@@ -866,6 +871,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     customIds[g] = v;
     if (g === "groq" && v) { const k = groqTierDef(v).limitsKey, got = (await chrome.storage.local.get(k))[k]; if (got) TIER_LIMITS["groq:" + v] = got; }
     providerChanged(); updateHealth();
+  });
+  // Forlades feltet tomt, vælges listens første model, så siden viser den model, der faktisk bruges
+  const leaveEmptyCustom = () => {
+    const g = group();
+    if ($("model").value !== CUSTOM_VALUE || $("customModel").value.trim()) return;
+    customIds[g] = ""; chosenModel[g] = (GROUPS[g] || [])[0]?.value || "";
+    fillModels(); providerChanged();
+  };
+  // Mister hele vinduet fokus (fx for at slå id'et op), bliver valget stående
+  $("customModel").addEventListener("blur", () => { if (document.hasFocus() && document.activeElement !== $("customModel")) leaveEmptyCustom(); });
+  $("customModel").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !$("customModel").value.trim()) { e.preventDefault(); leaveEmptyCustom(); $("model").focus(); }   // uden preventDefault åbner Enter listen
   });
   $("apiKey").addEventListener("input", () => { updateKeyHint(); clearTest(); showPool(); changed(TYPE_PAUSE); });
   // Øjet: vis/skjul nøglen

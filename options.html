@@ -151,7 +151,7 @@
 
     .lb { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
     input:not([type=checkbox]):not([type=radio]), select, textarea { width: 100%; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--ctl-line); background: var(--ctl); color: var(--ink); font: inherit; }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(47,123,246,.18); }
+    input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(47,123,246,.18); }
     .tile input:not([type=checkbox]):not([type=radio]), .tile select, .tile textarea { background: var(--ctl); }
     textarea { height: 240px; padding: 14px 16px; border-radius: 14px; font-family: "Geist Mono", monospace; font-size: 12.5px; line-height: 1.65; resize: vertical; }
     input.num { height: 56px; font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
@@ -214,6 +214,7 @@
     #customModel { margin-top: 10px; width: 100%; font-family: "Geist Mono", monospace; font-size: 13px; }
     #customModel[hidden], #customHint[hidden] { display: none; }
     #customHint { margin-top: 6px; }
+    #customHint .nw { white-space: nowrap; }
     .mstat { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--muted); }
     .mstat[data-st="err"] { color: var(--err); }
     .mstat[hidden] { display: none; }
