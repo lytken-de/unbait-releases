@@ -1,5 +1,5 @@
 {
-  "version": "2.03",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.03-chrome.zip",
-  "notes": "Ved »Model« viser en prik, om modellen virker, og hvornår den sidst blev tjekket. Du kan nu skrive dit eget model-id hos OpenAI, Anthropic, Gemini, DeepSeek, Groq og OpenRouter. Nøglefeltet er rettet, og koden er ryddet op."
+  "version": "2.04",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.04-chrome.zip",
+  "notes": "Tekstfelterne får en tydelig blå kant, når du skriver i dem. Lader du feltet til eget model-id stå tomt, får du at vide, hvilken model der bruges i stedet, og listen går tilbage til den."
 }
