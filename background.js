@@ -859,9 +859,16 @@ function thoughtOutError(kilo, data, fr) {
 // headlineKey står i shared.js
 const sameHeadline = (a, b) => !!headlineKey(a) && headlineKey(a) === headlineKey(b);
 
-// Svarets anførselstegn fjernes, og ét afsluttende punktum (ikke »…« eller »...«)
+// Svarets anførselstegn fjernes, og ét afsluttende punktum (ikke »…« eller »...«).
+// Markdown-fremhævning fjernes også: nogle modeller sætter **fed** eller *kursiv* om svaret eller enkelte ord
+const QUOTES = /^["'“”»«]+|["'“”»«]+$/g;
+function stripMarkdown(t) {
+  return t.replace(/(\*\*|__)(?=\S)(.+?)(?<=\S)\1/g, "$2")
+    .replace(/(^|[^\p{L}\p{N}*])\*(?=\S)([^*]+?)(?<=\S)\*(?![\p{L}\p{N}*])/gu, "$1$2")
+    .replace(/^\*+\s*|\s*\*+$/g, "");
+}
 function cleanHeadline(t) {
-  return String(t).replace(/^["'“”»«]+|["'“”»«]+$/g, "").trim().replace(/(?<![.…])\.$/, "").trim();
+  return stripMarkdown(String(t).replace(QUOTES, "").trim()).replace(QUOTES, "").trim().replace(/(?<![.…])\.$/, "").trim();
 }
 
 // Afvis svar der ikke lever op til prompten: intet spørgsmål eller udråb,
@@ -930,6 +937,8 @@ function cachedTooLong(original, cachedText, settings) {
 async function readUsableCache(key, text, settings) {
   const e = await readCache(key);
   if (!e) return null;
+  // Omskrivninger, der blev gemt med Markdown-stjerner, renses, når de læses
+  if (typeof e.v === "string" && e.v !== SKIP) e.v = cleanHeadline(e.v);
   if (e.v !== SKIP && sameHeadline(text, e.v)) { await chrome.storage.local.remove(key); return null; }
   if (cachedTooLong(text, e.v, settings)) return null;
   return e;

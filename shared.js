@@ -120,7 +120,13 @@ const PROVIDERS = {
       { id: "mistralai/mistral-small-24b-instruct-2501", name: "Mistral Small 3 (paid)", paid: true, prices: { in: 0.05, cache: 0.05, out: 0.08 } },
       // Kun Amazon Bedrock i eu-west-1, aldrig en anden udbyder. GPT-OSS kan ikke slå tænkningen fra: lav tænkning, ikke med i svaret
       { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B · Bedrock EU (paid)", paid: true, prices: { in: 0.07, cache: 0.07, out: 0.15 },
-        body: { max_tokens: 2000, reasoning: { effort: "low", exclude: true }, provider: { only: ["amazon-bedrock/eu-west-1"], allow_fallbacks: false } } }
+        body: { max_tokens: 2000, reasoning: { effort: "low", exclude: true }, provider: { only: ["amazon-bedrock/eu-west-1"], allow_fallbacks: false } } },
+      // Kun Inceptrons endpoint (fp4), aldrig en anden udbyder. Tænkningen slås fra som standard (reasoning.effort "none")
+      { id: "deepseek/deepseek-v4-flash-0731", name: "DeepSeek V4 Flash · Inceptron EU (paid)", paid: true, prices: { in: 0.13, cache: 0.027, out: 0.495 },
+        body: { provider: { only: ["inceptron/fp4"], allow_fallbacks: false } } },
+      // Kun Mistrals eget EU-endpoint, aldrig en anden udbyder
+      { id: "mistralai/mistral-nemo", name: "Mistral Nemo · Mistral EU (paid)", paid: true, prices: { in: 0.15, cache: 0.015, out: 0.15 },
+        body: { provider: { only: ["mistral/eu"], allow_fallbacks: false } } }
     ],
     // Modellens egne felter (body i listen) erstatter standardfelterne
     url: "https://openrouter.ai/api/v1/chat/completions", body: (model) => ({ max_tokens: 300, temperature: 0.3, reasoning: { effort: "none" },

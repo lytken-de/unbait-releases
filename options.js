@@ -859,7 +859,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Modelskift: ved Gemini skifter udbyderen (gemini/gemini_free); ellers følger forbrug, noter og grænser modellen
   $("model").addEventListener("change", () => {
     chosenModel[group()] = $("model").value; showCustom(); providerChanged();
-    if ($("model").value === CUSTOM_VALUE && !$("customModel").value) $("customModel").focus();
+    // Fokus flyttes først, når listen er lukket: ellers sender lukningen fokus tilbage til listen, og det tomme felt forlades
+    if ($("model").value === CUSTOM_VALUE && !$("customModel").value) setTimeout(() => $("customModel").focus());
   });
   $("customModel").addEventListener("input", customHint);
   // Gemmes, når feltet forlades eller der trykkes Enter. Et id fra listen vælger modellen i listen
