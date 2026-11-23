@@ -1,5 +1,5 @@
 {
-  "version": "2.05",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.05-chrome.zip",
-  "notes": "Ny knap med sol og måne øverst på indstillingssiden skifter mellem lyst og mørkt tema. OpenRouter har fået modellen GPT-OSS 20B, som kun kører hos Amazon Bedrock i EU (Irland)."
+  "version": "2.06",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.06-chrome.zip",
+  "notes": "»Eget model-id…« kan vælges igen. Stjerner (**) fra AI'en fjernes fra overskrifterne. OpenRouter har fået DeepSeek V4 Flash (kun Inceptron EU) og Mistral Nemo (kun Mistral EU)."
 }
