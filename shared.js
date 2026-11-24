@@ -61,13 +61,19 @@ const OLLAMA_ORIGINS = [OLLAMA_URL + "/*"];
 const CHAT_BODY_300 = () => ({ max_tokens: 300, temperature: 0.3 });
 const PROVIDERS = {
   // OpenAI: modellen vælges i listen »Model«; GPT-6 Luna er standard. Ingen tænkning: hurtigere og billigere;
-  // accepterer modellen ikke "none", bruges "low". Priser: OpenAIs listepriser 26. okt. 2026 (developers.openai.com)
+  // accepterer modellen ikke "none", bruges "low". Priser: OpenAIs listepriser for korte forespørgsler (developers.openai.com)
   openai: { name: "OpenAI/GPT", model: "gpt-6-luna", modelName: "GPT-6 Luna", keyPlaceholder: "sk-…", keyFamily: "sk",
     models: [
       { id: "gpt-6-luna", name: "GPT-6 Luna", prices: { in: 0.10, cache: 0.01, out: 0.50 } },
+      { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", prices: { in: 0.20, cache: 0.02, out: 1.20 } },
+      { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", prices: { in: 2.00, cache: 0.20, out: 12.00 } },
+      { id: "gpt-5.5", name: "GPT-5.5", prices: { in: 5.00, cache: 0.50, out: 30.00 } },
       { id: "gpt-5.4", name: "GPT-5.4", prices: { in: 2.50, cache: 0.25, out: 15.00 } },
       { id: "gpt-5.4-mini", name: "GPT-5.4 mini", prices: { in: 0.75, cache: 0.075, out: 4.50 } },
-      { id: "gpt-5.4-nano", name: "GPT-5.4 nano", prices: { in: 0.20, cache: 0.02, out: 1.25 } }
+      { id: "gpt-5.4-nano", name: "GPT-5.4 nano", prices: { in: 0.20, cache: 0.02, out: 1.25 } },
+      // Forældede hos OpenAI; om de tager "none", oplyses ikke – afvises det, prøves "low" (findFix)
+      { id: "gpt-5-mini", name: "GPT-5 mini", prices: { in: 0.25, cache: 0.025, out: 2.00 } },
+      { id: "gpt-5-nano", name: "GPT-5 nano", prices: { in: 0.05, cache: 0.005, out: 0.40 } }
     ],
     url: "https://api.openai.com/v1/chat/completions", body: () => ({ max_completion_tokens: 2000, reasoning_effort: "none", temperature: 0.3 }) },
   anthropic: { name: "Anthropic/Claude", model: "claude-haiku-5-5", modelName: "Claude Haiku 5.5", keyPlaceholder: "sk-ant-…", keyFamily: "anthropic",
@@ -117,6 +123,8 @@ const PROVIDERS = {
       { id: "openrouter/free", name: "Free Models Router" },
       { id: "google/gemma-4-31b-it:free", name: "Google Gemma 4 31B (free)" },
       { id: "nvidia/nemotron-3.5-lightning:free", name: "Nemotron 3.5 Lightning (free)" },
+      { id: "baidu/ernie-5.5-flash-preview:free", name: "Baidu ERNIE 5.5 Flash Preview (free)" },
+      { id: "liquid/lfm-3-1.7b:free", name: "Liquid LFM3 1.7B (free)" },
       { id: "mistralai/mistral-small-24b-instruct-2501", name: "Mistral Small 3 (paid)", paid: true, prices: { in: 0.05, cache: 0.05, out: 0.08 } },
       // Kun Amazon Bedrock i eu-west-1, aldrig en anden udbyder. GPT-OSS kan ikke slå tænkningen fra: lav tænkning, ikke med i svaret
       { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B · Bedrock EU (paid)", paid: true, prices: { in: 0.07, cache: 0.07, out: 0.15 },
