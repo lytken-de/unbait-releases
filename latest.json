@@ -1,5 +1,5 @@
 {
-  "version": "2.06",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.06-chrome.zip",
-  "notes": "»Eget model-id…« kan vælges igen. Stjerner (**) fra AI'en fjernes fra overskrifterne. OpenRouter har fået DeepSeek V4 Flash (kun Inceptron EU) og Mistral Nemo (kun Mistral EU)."
+  "version": "2.07",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.07-chrome.zip",
+  "notes": "Nye modeller hos OpenAI: GPT-5.6 Luna, GPT-5.6 Terra, GPT-5.5, GPT-5 mini og GPT-5 nano. Nye gratis modeller hos OpenRouter: Baidu ERNIE 5.5 Flash Preview og Liquid LFM3 1.7B."
 }
