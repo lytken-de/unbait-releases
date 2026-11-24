@@ -333,6 +333,14 @@
     try { const u = new URL(url, location.href); let p = u.pathname; try { p = decodeURIComponent(p); } catch {} return " " + asAddress(p) + " "; }
     catch { return ""; }
   }
+  // Stien som sektioner, fx "/sport/odense haandbold/" – til ord med skråstreg på begge sider
+  const asSections = (p) => "/" + String(p || "").split("/").map(asAddress).filter(Boolean).join("/") + "/";
+  function addressSections(url) {
+    try { const u = new URL(url, location.href); let p = u.pathname; try { p = decodeURIComponent(p); } catch {} return asSections(p); }
+    catch { return ""; }
+  }
+  // "/sport/" rammer kun hele sektioner i adressen (ikke "/sportsvogn/"), og aldrig overskrift eller uddrag
+  const isSectionWord = (w) => w.length > 2 && w.startsWith("/") && w.endsWith("/") && asSections(w) !== "//";
 
   function parseWords(s) {
     return String(s || "").split(/[,\n]/).map(w => w.trim().toLowerCase()).filter(w => w.length >= 2);
@@ -396,7 +404,9 @@
       const ex = excerptText.get(el) || "";
       // Også artiklens adresse (fx …/troels-mylenbergs-doed…): bindestreger som mellemrum, æ/ø/å som ae/oe/aa
       const adr = url ? addressWords(url) : "";
-      const w = hideCfg.words.find(w => text.includes(w) || ex.includes(w) || (adr && asAddress(w) && adr.includes(asAddress(w))));
+      const secs = url ? addressSections(url) : "";
+      const w = hideCfg.words.find(w => isSectionWord(w) ? !!secs && secs.includes(asSections(w))
+        : text.includes(w) || ex.includes(w) || (adr && asAddress(w) && adr.includes(asAddress(w))));
       if (w) return `"${w}"`;
     }
     return "";
@@ -503,6 +513,18 @@
       // DR: hele blokken "… lige nu"/"Seneste om …" med overskrift, når alle dens kort er skjult
       document.querySelectorAll(DR_MORE).forEach(b => groups.push([b, [...b.querySelectorAll("a.dre-teaser-title")].map(cardRoot)]));
     }
+    if (JFM) {
+      // JFM-forsiderne: rækker (.splitblock) med kolonner, ét kort pr. blok. En tom kolonne skjules, og sidens
+      // gitter (grid-auto-flow: column) lader de andre dele bredden. Er alle tomme, skjules rækken.
+      // Kolonner med andet end kort (fx spil og widgets) bliver stående
+      const cardsIn = (box) => [...box.querySelectorAll(JFM_CARD)];
+      const onlyCards = (box) => [...box.querySelectorAll(".splitblock__column > .block")].every(b => b.querySelector(JFM_CARD));
+      // Også den enkelte blok, så et kort i en kolonne med to ikke efterlader en tom halvdel
+      document.querySelectorAll(".splitblock__column > .block").forEach(b => groups.push([b, cardsIn(b)]));
+      document.querySelectorAll(".splitblock__grid > .splitblock__column").forEach(c =>
+        groups.push([c, c.querySelectorAll(":scope > .block").length && onlyCards(c) ? cardsIn(c) : []]));
+      document.querySelectorAll(".splitblock").forEach(r => groups.push([r, onlyCards(r) ? cardsIn(r) : []]));
+    }
     if (!groups.length && !hiddenGroups.size) return;
     groups.forEach(([g, items]) => {
       const all = items.length > 0 && [...items].every(i => i.getAttribute("data-unbait-hide") === "remove");
@@ -510,6 +532,8 @@
       else if (!all && hiddenGroups.has(g)) { selfWrite(() => g.removeAttribute("data-unbait-hide")); hiddenGroups.delete(g); }
     });
   }
+
+  const JFM_CARD = "article.teaser, li.list__item";
 
   const isHiddenEl = (el) => !!el.closest("[data-unbait-hide]");
 
