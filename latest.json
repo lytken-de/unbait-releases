@@ -1,5 +1,5 @@
 {
-  "version": "2.07",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.07-chrome.zip",
-  "notes": "Nye modeller hos OpenAI: GPT-5.6 Luna, GPT-5.6 Terra, GPT-5.5, GPT-5 mini og GPT-5 nano. Nye gratis modeller hos OpenRouter: Baidu ERNIE 5.5 Flash Preview og Liquid LFM3 1.7B."
+  "version": "2.08",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.08-chrome.zip",
+  "notes": "Bedre overskrifter: AI'en opfinder ikke længere et grundled, når overskriften mangler det (fx »en bil«, der ikke står i artiklen). På JFM-medierne (fyens.dk m.fl.) hentes brødteksten nu, når artiklen er fri at læse, så navne kommer med."
 }

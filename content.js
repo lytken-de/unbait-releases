@@ -757,7 +757,7 @@
   const NOT_BODY = "aside, nav, footer, figure, figcaption, [class*='related'], [class*='relateret'], [class*='teaser'], [class*='Teaser'], [class*='recommend'], [class*='anbefal'], [class*='list'], [class*='paywall'], [class*='newsletter'], [class*='nyhedsbrev']";
 
   // finalUrl: adressen, serveren omdirigerede til (fx B.T.: …/fyrer-123 -> …/nu-er-det-besluttet-fyrer-123)
-  function extractExcerpt(html, articleUrl, finalUrl = "") {
+  async function extractExcerpt(html, articleUrl, finalUrl = "") {
     const doc = new DOMParser().parseFromString(html, "text/html");
     // Siden skal være den artikel, vi bad om (ikke fx en login- eller forside efter omdirigering)
     const canonLink = doc.querySelector("link[rel='canonical']")?.href;
@@ -824,6 +824,11 @@
 
     // 3) Brødtekst fra artikelens egen tekstblok – ikke relaterede bokse
     if (parts.join(" ").length < ENOUGH) {
+      // JFM: teksten ligger ikke i sideskallen; den hentes separat (betalingsmuren respekteres i jfmAsyncBody)
+      if (SITE === "jfm") {
+        const jfm = await jfmAsyncBody(doc, articleUrl);
+        for (const p of jfm.split("\n")) { if (parts.join(" ").length < EXCERPT_MAX) add(p); }
+      }
       let body = null;
       for (const sel of BODY_SELECTORS[SITE] || GENERIC_BODY) { body = doc.querySelector(sel); if (body) break; }
       body?.querySelectorAll("p").forEach(p => {
@@ -1013,6 +1018,36 @@
     return { html: raw.slice(0, ARTICLE_MAX_CHARS), finalUrl: res.redirected ? res.url : "" };
   }
 
+  // HTML fra en artikeladresse: samme domæne hentes direkte, et andet via baggrunden (som kun
+  // tillader de sider, udvidelsen kender). Returnerer kun HTML'en (uden finalUrl).
+  async function fetchHtml(url) {
+    if (new URL(url, location.href).origin === location.origin) return (await fetchSameOrigin(url)).html;
+    const r = await withTimeout(chrome.runtime.sendMessage({ action: "fetchArticle", url }), ARTICLE_MSG_TIMEOUT_MS, null);
+    return r?.html || "";
+  }
+
+  // JFM-medier: brødteksten står ikke i sideskallen (.article__parts er tom). Zephr henter den efter
+  // indlæsningen fra data-load-async-url. Vi henter den KUN, når siden selv oplyser, at artiklen er
+  // gratis (isPaidArticle tom) eller brugeren har adgang (isAccessGranted "true") – aldrig bag en
+  // betalingsmur, brugeren ikke selv kan læse.
+  async function jfmAsyncBody(doc, articleUrl) {
+    const path = doc.querySelector("article[data-load-async-url]")?.getAttribute("data-load-async-url");
+    if (!path) return "";
+    let gate = {};
+    try { gate = JSON.parse(doc.querySelector(".article-paywall")?.dataset.zephrCustomData || "{}"); } catch {}
+    if (gate.isPaidArticle !== "" && gate.isAccessGranted !== "true") return "";
+    const html = await fetchHtml(new URL(path, articleUrl).href);
+    if (!html) return "";
+    const frag = new DOMParser().parseFromString(html, "text/html");
+    const out = [];
+    frag.querySelectorAll(".article__text p, .article__body p, [class*='article-body'] p").forEach(p => {
+      if (p.closest(NOT_BODY)) return;
+      const t = p.textContent.replace(/\s+/g, " ").trim();
+      if (t.length >= 30) out.push(t);
+    });
+    return out.join("\n");
+  }
+
   async function getContext(url, headline = "") {
     if (!url) return "";
     const pod = podcastContext(url);
@@ -1041,7 +1076,7 @@
         html = r?.html || ""; finalUrl = r?.finalUrl || "";
       }
       if (!html) return "";
-      return tv2Entry ? tv2EntryPost(html, url) : tv2Live ? tv2LivePost(html, url, headline) : extractExcerpt(html, url, finalUrl);
+      return tv2Entry ? tv2EntryPost(html, url) : tv2Live ? tv2LivePost(html, url, headline) : await extractExcerpt(html, url, finalUrl);
     } catch { return ""; }
   }
 

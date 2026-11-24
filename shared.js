@@ -10,6 +10,7 @@ Krav:
 * Højst 15 ord. Udelad hellere sekundære detaljer end at skrive længere.
 * Skriv et udsagn uden spørgsmålstegn og udråbstegn.
 * Brug kun oplysninger fra overskriften og uddraget. Gæt aldrig, og tilføj ikke viden udefra. Afslør kun det, originalen holder hemmeligt, hvis det fremgår af uddraget.
+* Mangler originalen, hvem eller hvad der handler, og står det heller ikke i uddraget, så skriv overskriften uden det, fx med et navneord eller i passiv (»Sammenstød med bus …«). Indsæt aldrig selv en person, et køretøj, et sted, et tal eller en årsag, der ikke står i teksten.
 * Gør ikke påstande stærkere end kilden, og bevar væsentlige forbehold. Skeln mellem fakta, vurderinger, beskyldninger og muligheder, og skriv forbehold kort, fx »ifølge politiet« eller »mistænkt for«. Nævn aldrig overskriften, artiklen eller uddraget som kilde. Er mediet selv eneste kilde, er »kan« eller »muligvis« forbehold nok.
 * Medtag kun de navne, tal og detaljer, der er nødvendige for at forstå hovedoplysningen.
 * Er originalen et spørgsmål, så skriv det dokumenterede svar som et udsagn. Fremgår svaret ikke, så beskriv emnet neutralt uden lokkespørgsmålet.
