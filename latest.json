@@ -1,5 +1,5 @@
 {
-  "version": "2.09",
-  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.09-chrome.zip",
-  "notes": "Skjul indhold: skriv et ord med skråstreger, fx /sport/, så skjules kun historier fra den sektion i adressen. På JFM-medierne (fyens.dk m.fl.) efterlader skjulte historier ikke længere huller på forsiden."
+  "version": "2.10",
+  "zip": "https://github.com/lytken-de/unbait-releases/raw/main/releases/unbaitdk-v2.10-chrome.zip",
+  "notes": "Rettelse: på JFM-medierne (fyens.dk m.fl.) hentes artiklens brødtekst nu igen, når artiklen er fri at læse, så overskrifterne kan tage navne med (fx »Imerco«). Virkede ikke i v2.08 og v2.09."
 }
