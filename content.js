@@ -1064,8 +1064,11 @@
     if (!html) return "";
     const frag = new DOMParser().parseFromString(html, "text/html");
     const out = [];
-    frag.querySelectorAll(".article__text p, .article__body p, [class*='article-body'] p").forEach(p => {
-      if (p.closest(NOT_BODY)) return;
+    // Svaret ER selve artiklen (teksten ligger i .article__text inde i Zephrs .article-paywall-wrapper),
+    // så her udelukkes kun figurer, reklamer og relaterede bokse – IKKE paywall-wrapperen som i NOT_BODY.
+    const SKIP = "figure, figcaption, [class*='related'], [class*='relateret'], [class*='teaser'], [class*='Teaser'], [class*='recommend'], [class*='anbefal'], [class*='newsletter'], [class*='nyhedsbrev'], .adblock, .share";
+    frag.querySelectorAll(".article__text p, .article__body p").forEach(p => {
+      if (p.closest(SKIP)) return;
       const t = p.textContent.replace(/\s+/g, " ").trim();
       if (t.length >= 30) out.push(t);
     });
